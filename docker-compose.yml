@@ -1,0 +1,12 @@
+version: "3.8"
+services:
+  robot:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    privileged: true
+    network_mode: host
+    volumes:
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    command: ros2 launch face_lock startup.launch.py

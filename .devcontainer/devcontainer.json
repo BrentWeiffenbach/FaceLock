@@ -1,0 +1,34 @@
+{
+    "name": "ROS2 Humble Dev",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "runArgs": [
+        "--net=host", // Necessary for ROS2 discovery
+        "--privileged", // Grants permission to access hardware
+        // Mount Webcams
+        "--device=/dev/video0:/dev/video0",
+        // Mount Pi-specific hardware (GPIO/I2C)
+        "--device=/dev/gpiomem:/dev/gpiomem",
+        "--device=/dev/i2c-1:/dev/i2c-1",
+        // Shared memory for high-bandwidth video
+        "--shm-size=512m"
+    ],
+    "containerEnv": {
+        "DISPLAY": "${localEnv:DISPLAY}", // For OpenCV/RViz windows
+        "LIBGL_ALWAYS_SOFTWARE": "1"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "Ranch-Hand-Robotics.rde-ros-2",
+                "ms-python.python",
+                "redhat.vscode-yaml",
+                "charliermarsh.ruff",
+                "ms-python.vscode-pylance",
+                "ms-python.debugpy"
+            ]
+        }
+    },
+    "remoteUser": "root"
+}
