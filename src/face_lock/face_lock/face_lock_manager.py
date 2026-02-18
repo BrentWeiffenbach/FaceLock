@@ -205,14 +205,11 @@ class FaceLockManager(Node):
         self.robot_state = RobotState.DISABLED
 
     def pir_cb(self, msg: Bool) -> None:
-        # Run the lifecycle nodes, activating the full system
-        self.get_logger().info(f"PIR sensor triggered: {msg.data}")
-        if msg.data and self.robot_state == RobotState.DISABLED:
-            # Transition to CHECKING activates all nodes and starts the inactivity timer
-            self.robot_state = RobotState.CHECKING
-        elif msg.data and self.robot_state == RobotState.CHECKING:
-            # Keep resetting the inactivity timer while motion is detected
+        if msg.data and self.robot_state in (RobotState.DISABLED, RobotState.CHECKING):
+            self.get_logger().info(f"PIR sensor triggered: {msg.data}")
             self.deactivate_timer.reset()
+            if self.robot_state == RobotState.DISABLED:
+                self.robot_state = RobotState.CHECKING
 
     def password_cb(self, msg: FaceBlendshapes) -> None:
         if self.robot_state != RobotState.CHECKING:
