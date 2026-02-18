@@ -6,6 +6,12 @@
     "runArgs": [
         "--net=host", // Necessary for ROS2 discovery
         "--privileged", // Grants permission to access hardware
+        "--env=DISPLAY=:0",
+        "--env=WAYLAND_DISPLAY=$WAYLAND_DISPLAY",
+        "--env=XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR",
+        "--env=QT_X11_NO_MITSHM=1",
+        "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw",
+        "--volume=/mnt/wslg:/mnt/wslg:rw",
         // Mount Webcams
         "--device=/dev/video0:/dev/video0",
         // Mount Pi-specific hardware (GPIO/I2C)
@@ -14,9 +20,13 @@
         // Shared memory for high-bandwidth video
         "--shm-size=512m"
     ],
+    "mounts": [
+        "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind,consistency=cached"
+    ],
     "containerEnv": {
         "DISPLAY": "${localEnv:DISPLAY}", // For OpenCV/RViz windows
-        "LIBGL_ALWAYS_SOFTWARE": "1"
+        "LIBGL_ALWAYS_SOFTWARE": "1",
+        "QT_X11_NO_MITSHM": "1"
     },
     "customizations": {
         "vscode": {

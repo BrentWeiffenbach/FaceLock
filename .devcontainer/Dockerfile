@@ -35,6 +35,11 @@ RUN pip3 install mediapipe
 RUN pip3 install pigpio opencv-python
 RUN pip3 uninstall -y numpy && pip3 install "numpy<2"
 
+# Install x11-apps for GUI test
+RUN apt-get update && apt-get install -y x11-apps && rm -rf /var/lib/apt/lists/*
+
+# Set permissions for SSH key usage
+RUN chmod 700 /root/.ssh && chmod 600 /root/.ssh/* || true
 
 # Add bashrc aliases and ROS2 sourcing for root
 RUN echo "\n# Custom FaceLock Aliases and ROS2 setup" >> /root/.bashrc \
@@ -55,5 +60,6 @@ RUN echo "\n# Custom FaceLock Aliases and ROS2 setup" >> /home/$USERNAME/.bashrc
     && echo "alias cbrc='code ~/.bashrc'" >> /home/$USERNAME/.bashrc \
     && echo "alias colconbuild='cd /workspaces/FaceLock && colcon build && source /workspaces/FaceLock/install/setup.bash'" >> /home/$USERNAME/.bashrc \
     && echo "alias cleancolconbuild='cd /workspaces/FaceLock && rm -rf build/ install/ log/ && colcon build && source /workspaces/FaceLock/install/setup.bash'" >> /home/$USERNAME/.bashrc \
+    && echo "alias facelock='cd /workspaces/FaceLock && ros2 launch face_lock startup.launch.py'" >> /home/$USERNAME/.bashrc \
     && echo "source /opt/ros/humble/setup.bash" >> /home/$USERNAME/.bashrc \
     && echo "source /workspaces/FaceLock/install/setup.bash" >> /home/$USERNAME/.bashrc
