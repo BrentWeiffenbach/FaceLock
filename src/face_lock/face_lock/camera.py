@@ -85,6 +85,11 @@ class CameraNode(LifecycleNode):
         if self.timer:
             self.timer.cancel()
             self.timer = None
+
+        # Release camera
+        if self.cap:
+            self.cap.release()
+            self.cap = None
         return super().on_deactivate(state)
 
     def on_cleanup(self, state: State) -> TransitionCallbackReturn:

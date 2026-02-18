@@ -50,6 +50,10 @@ class ArmController(LifecycleNode):
         # TODO: Stop processing
         return TransitionCallbackReturn.SUCCESS
 
+    def on_cleanup(self, state: State) -> TransitionCallbackReturn:
+        self.get_logger().info("Cleaning up arm controller")
+        return TransitionCallbackReturn.SUCCESS
+
     def joint_states_cb(self, msg: JointState) -> None:
         pass
 

@@ -29,6 +29,7 @@ class FaceRecognitionNode(LifecycleNode):
         )
 
         # Publishers
+        # TODO: Only send a blendshape if identity for that frame is verified
         self.blendshapes_pub: Publisher = self.create_lifecycle_publisher(
             FaceBlendshapes, "/face_recognition/blendshapes", 10
         )
