@@ -71,6 +71,11 @@ class FaceLockManager(Node):
             "face_recognition": False,
             "arm_controller": False,
         }
+        self.configuring = {
+            "camera": False,
+            "face_recognition": False,
+            "arm_controller": False,
+        }
         self.activated = {
             "camera": False,
             "face_recognition": False,
@@ -137,18 +142,21 @@ class FaceLockManager(Node):
         all_configured = True
         for client, name in clients:
             if not self.configured[name]:
+                all_configured = False
+                if self.configuring[name]:
+                    continue  # already waiting on a response
                 if client.wait_for_service(timeout_sec=1.0):
                     self.configure_node(client, name)
                 else:
                     self.get_logger().warn(
                         f"Service not available for configuration: {client.srv_name}"
                     )
-                all_configured = False
         if all_configured:
             self.config_timer.cancel()
 
     def configure_node(self, client: Client, name: str) -> None:
         self.get_logger().info(f"Configuring node: {client.srv_name}")
+        self.configuring[name] = True
         req = ChangeState.Request()
         req.transition.id = 1  # Transition ID for "configure"
         future = client.call_async(req)
@@ -159,8 +167,9 @@ class FaceLockManager(Node):
     def handle_configure_result(
         self, future: Future, client: Client, name: str
     ) -> None:
+        self.configuring[name] = False
         result = future.result()
-        if result is not None:
+        if result is not None and result.success:
             self.get_logger().info(f"{name} node configured successfully")
             self.configured[name] = True
         else:
@@ -264,7 +273,21 @@ class FaceLockManager(Node):
             self.get_logger().info("Door unlocked and arm reset successfully")
             self.robot_state = RobotState.OPEN
         else:
-            self.get_logger().error("Failed to unlock door or reset arm")
+            self.get_logger().error(
+                "Failed to unlock door or reset arm, trying again..."
+            )
+            self.unlock_door_srv.wait_for_service()
+            unlock_req = Trigger.Request()
+            unlock_future = self.unlock_door_srv.call_async(unlock_req)
+            self.reset_arm_srv.wait_for_service()
+            reset_req = Trigger.Request()
+            reset_future = self.reset_arm_srv.call_async(reset_req)
+            unlock_future.add_done_callback(
+                lambda f: self.unlock_done_cb(unlock_future, reset_future)
+            )
+            reset_future.add_done_callback(
+                lambda f: self.unlock_done_cb(unlock_future, reset_future)
+            )
 
     def button_cb(self, msg: Bool) -> None:
         if self.robot_state == RobotState.OPEN and msg.data:
@@ -282,8 +305,12 @@ class FaceLockManager(Node):
         if result and result.success:
             self.get_logger().info("Door locked successfully")
             self.robot_state = RobotState.DISABLED
-        else:
-            self.get_logger().error("Failed to lock door")
+        elif result and result.success is False:
+            self.get_logger().error("Failed to lock door, trying again...")
+            self.lock_door_srv.wait_for_service()
+            lock_req = Trigger.Request()
+            future = self.lock_door_srv.call_async(lock_req)
+            future.add_done_callback(self.lock_done_cb)
 
 
 def main(args: Optional[list[str]] = None) -> None:
