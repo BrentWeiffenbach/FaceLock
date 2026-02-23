@@ -32,7 +32,7 @@ RUN pip3 install mediapipe=0.10.9
 
 # Install Hardware Libraries
 # Note: numpy<2 required for cv_bridge compatibility with ROS2 Humble
-RUN pip3 install pigpio opencv-python
+RUN pip3 install pigpio opencv-python face_recognition flask
 RUN pip3 uninstall -y numpy && pip3 install "numpy<2"
 
 # Install x11-apps for GUI test
