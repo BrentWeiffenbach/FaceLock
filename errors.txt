@@ -1,28 +1,42 @@
+facelock@facelock-desktop:~/FaceLock$ docker-compose up -d
+Building robot
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon  8.494MB
+Step 1/17 : FROM --platform=linux/arm64 osrf/ros:humble-desktop
+humble-desktop: Pulling from osrf/ros
+Digest: sha256:23e47bb458490403357ded3dceb678406a295a6ae1d9a00fa72ede93efe03bb0
 Status: Downloaded newer image for osrf/ros:humble-desktop
+
+WARNING: Pulled image with specified platform (linux/arm64), but the resulting image's configured platform (linux/amd64) does not match.
+This is most likely caused by a bug in the build system that created the fetched image (osrf/ros:humble-desktop).
+Please notify the image author to correct the configuration.
  ---> 2498a96055e4
 Step 2/17 : USER root
  ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in 9e335e625d0b
- ---> Removed intermediate container 9e335e625d0b
- ---> c4923bbd0132
+ ---> Running in 68813c430dce
+ ---> Removed intermediate container 68813c430dce
+ ---> 71f4affce9aa
 Step 3/17 : ARG USERNAME=ros_user
  ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in 72dab999efd0
- ---> Removed intermediate container 72dab999efd0
- ---> adf476cf87a2
+ ---> Running in ebddd51c925c
+ ---> Removed intermediate container ebddd51c925c
+ ---> 1ff5c3df9cb0
 Step 4/17 : ARG USER_UID=1000
  ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in 80644d2c8fda
- ---> Removed intermediate container 80644d2c8fda
- ---> cc7a3ec8a149
+ ---> Running in e7e33bd43f59
+ ---> Removed intermediate container e7e33bd43f59
+ ---> 947b76dd153b
 Step 5/17 : ARG USER_GID=$USER_UID
  ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in b18e5d8f0021
- ---> Removed intermediate container b18e5d8f0021
- ---> a8feae0a24fd
+ ---> Running in 49a28ebb1f3f
+ ---> Removed intermediate container 49a28ebb1f3f
+ ---> 5b2674efc2a2
 Step 6/17 : RUN groupadd --gid $USER_GID $USERNAME     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME     && usermod -aG video,dialout $USERNAME     && apt-get update && apt-get install -y sudo     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME     && chmod 0440 /etc/sudoers.d/$USERNAME
  ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in e3d9a1d8d666
+ ---> Running in c855eaba895c
 exec /bin/sh: exec format error
 The command '/bin/sh -c groupadd --gid $USER_GID $USERNAME     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME     && usermod -aG video,dialout $USERNAME     && apt-get update && apt-get install -y sudo     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME     && chmod 0440 /etc/sudoers.d/$USERNAME' returned a non-zero code: 255
 ERROR: Service 'robot' failed to build : Build failed
