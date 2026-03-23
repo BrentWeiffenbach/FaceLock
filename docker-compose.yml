@@ -1,12 +1,20 @@
 version: "3.8"
 services:
   robot:
+    platform: linux/arm64
     build:
       context: .
       dockerfile: .devcontainer/Dockerfile
     privileged: true
     network_mode: host
+    environment:
+      - DISPLAY=$DISPLAY
+      - QT_X11_NO_MITSHM=1
     volumes:
+      - .:/workspaces/FaceLock
       - /dev:/dev
       - /run/udev:/run/udev:ro
-    command: ros2 launch face_lock startup.launch.py
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    tty: true
+    stdin_open: true
+    command: /bin/bash -c "source /opt/ros/humble/setup.bash && colcon build && source install/setup.bash"

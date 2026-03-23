@@ -1,4 +1,4 @@
-FROM osrf/ros:humble-desktop
+FROM --platform=linux/arm64 osrf/ros:humble-desktop
 
 USER root
 
@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip3 install --upgrade pip
 
 # Install MediaPipe via pip
-RUN pip3 install mediapipe
+RUN pip3 install mediapipe-rpi4
 
 # Install Hardware Libraries
 # Note: numpy<2 required for cv_bridge compatibility with ROS2 Humble
