@@ -1,92 +1,28 @@
-facelock@facelock-desktop:~/FaceLock$ docker-compose up -d
-Traceback (most recent call last):
-  File "/usr/lib/python3/dist-packages/urllib3/connectionpool.py", line 700, in urlopen
-    httplib_response = self._make_request(
-  File "/usr/lib/python3/dist-packages/urllib3/connectionpool.py", line 395, in _make_request
-    conn.request(method, url, **httplib_request_kw)
-  File "/usr/lib/python3.10/http/client.py", line 1303, in request
-    self._send_request(method, url, body, headers, encode_chunked)
-  File "/usr/lib/python3.10/http/client.py", line 1349, in _send_request
-    self.endheaders(body, encode_chunked=encode_chunked)
-  File "/usr/lib/python3.10/http/client.py", line 1298, in endheaders
-    self._send_output(message_body, encode_chunked=encode_chunked)
-  File "/usr/lib/python3.10/http/client.py", line 1058, in _send_output
-    self.send(msg)
-  File "/usr/lib/python3.10/http/client.py", line 996, in send
-    self.connect()
-  File "/usr/lib/python3/dist-packages/docker/transport/unixconn.py", line 30, in connect
-    sock.connect(self.unix_socket)
-PermissionError: [Errno 13] Permission denied
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "/usr/lib/python3/dist-packages/requests/adapters.py", line 439, in send
-    resp = conn.urlopen(
-  File "/usr/lib/python3/dist-packages/urllib3/connectionpool.py", line 756, in urlopen
-    retries = retries.increment(
-  File "/usr/lib/python3/dist-packages/urllib3/util/retry.py", line 534, in increment
-    raise six.reraise(type(error), error, _stacktrace)
-  File "/usr/lib/python3/dist-packages/six.py", line 718, in reraise
-    raise value.with_traceback(tb)
-  File "/usr/lib/python3/dist-packages/urllib3/connectionpool.py", line 700, in urlopen
-    httplib_response = self._make_request(
-  File "/usr/lib/python3/dist-packages/urllib3/connectionpool.py", line 395, in _make_request
-    conn.request(method, url, **httplib_request_kw)
-  File "/usr/lib/python3.10/http/client.py", line 1303, in request
-    self._send_request(method, url, body, headers, encode_chunked)
-  File "/usr/lib/python3.10/http/client.py", line 1349, in _send_request
-    self.endheaders(body, encode_chunked=encode_chunked)
-  File "/usr/lib/python3.10/http/client.py", line 1298, in endheaders
-    self._send_output(message_body, encode_chunked=encode_chunked)
-  File "/usr/lib/python3.10/http/client.py", line 1058, in _send_output
-    self.send(msg)
-  File "/usr/lib/python3.10/http/client.py", line 996, in send
-    self.connect()
-  File "/usr/lib/python3/dist-packages/docker/transport/unixconn.py", line 30, in connect
-    sock.connect(self.unix_socket)
-urllib3.exceptions.ProtocolError: ('Connection aborted.', PermissionError(13, 'Permission denied'))
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "/usr/lib/python3/dist-packages/docker/api/client.py", line 214, in _retrieve_server_version
-    return self.version(api_version=False)["ApiVersion"]
-  File "/usr/lib/python3/dist-packages/docker/api/daemon.py", line 181, in version
-    return self._result(self._get(url), json=True)
-  File "/usr/lib/python3/dist-packages/docker/utils/decorators.py", line 46, in inner
-    return f(self, *args, **kwargs)
-  File "/usr/lib/python3/dist-packages/docker/api/client.py", line 237, in _get
-    return self.get(url, **self._set_request_timeout(kwargs))
-  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 557, in get
-    return self.request('GET', url, **kwargs)
-  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 544, in request
-    resp = self.send(prep, **send_kwargs)
-  File "/usr/lib/python3/dist-packages/requests/sessions.py", line 657, in send
-    r = adapter.send(request, **kwargs)
-  File "/usr/lib/python3/dist-packages/requests/adapters.py", line 498, in send
-    raise ConnectionError(err, request=request)
-requests.exceptions.ConnectionError: ('Connection aborted.', PermissionError(13, 'Permission denied'))
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "/usr/bin/docker-compose", line 33, in <module>
-    sys.exit(load_entry_point('docker-compose==1.29.2', 'console_scripts', 'docker-compose')())
-  File "/usr/lib/python3/dist-packages/compose/cli/main.py", line 81, in main
-    command_func()
-  File "/usr/lib/python3/dist-packages/compose/cli/main.py", line 200, in perform_command
-    project = project_from_options('.', options)
-  File "/usr/lib/python3/dist-packages/compose/cli/command.py", line 60, in project_from_options
-    return get_project(
-  File "/usr/lib/python3/dist-packages/compose/cli/command.py", line 152, in get_project
-    client = get_client(
-  File "/usr/lib/python3/dist-packages/compose/cli/docker_client.py", line 41, in get_client
-    client = docker_client(
-  File "/usr/lib/python3/dist-packages/compose/cli/docker_client.py", line 170, in docker_client
-    client = APIClient(use_ssh_client=not use_paramiko_ssh, **kwargs)
-  File "/usr/lib/python3/dist-packages/docker/api/client.py", line 197, in __init__
-    self._version = self._retrieve_server_version()
-  File "/usr/lib/python3/dist-packages/docker/api/client.py", line 221, in _retrieve_server_version
-    raise DockerException(
-docker.errors.DockerException: Error while fetching server API version: ('Connection aborted.', PermissionError(13, 'Permission denied'))
+Status: Downloaded newer image for osrf/ros:humble-desktop
+ ---> 2498a96055e4
+Step 2/17 : USER root
+ ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+ ---> Running in 9e335e625d0b
+ ---> Removed intermediate container 9e335e625d0b
+ ---> c4923bbd0132
+Step 3/17 : ARG USERNAME=ros_user
+ ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+ ---> Running in 72dab999efd0
+ ---> Removed intermediate container 72dab999efd0
+ ---> adf476cf87a2
+Step 4/17 : ARG USER_UID=1000
+ ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+ ---> Running in 80644d2c8fda
+ ---> Removed intermediate container 80644d2c8fda
+ ---> cc7a3ec8a149
+Step 5/17 : ARG USER_GID=$USER_UID
+ ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+ ---> Running in b18e5d8f0021
+ ---> Removed intermediate container b18e5d8f0021
+ ---> a8feae0a24fd
+Step 6/17 : RUN groupadd --gid $USER_GID $USERNAME     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME     && usermod -aG video,dialout $USERNAME     && apt-get update && apt-get install -y sudo     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME     && chmod 0440 /etc/sudoers.d/$USERNAME
+ ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
+ ---> Running in e3d9a1d8d666
+exec /bin/sh: exec format error
+The command '/bin/sh -c groupadd --gid $USER_GID $USERNAME     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME     && usermod -aG video,dialout $USERNAME     && apt-get update && apt-get install -y sudo     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME     && chmod 0440 /etc/sudoers.d/$USERNAME' returned a non-zero code: 255
+ERROR: Service 'robot' failed to build : Build failed
