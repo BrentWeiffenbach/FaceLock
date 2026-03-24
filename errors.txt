@@ -1,20 +1,264 @@
-[face_recognition-4] Traceback (most recent call last):
-[face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition", line 33, in <module>
-[face_recognition-4]     sys.exit(load_entry_point('face-lock==0.0.1', 'console_scripts', 'face_recognition')())
-[face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition", line 25, in importlib_load_entry_point
-[face_recognition-4]     return next(matches).load()
-[face_recognition-4]   File "/usr/lib/python3.10/importlib/metadata/__init__.py", line 171, in load
-[face_recognition-4]     module = import_module(match.group('module'))
-[face_recognition-4]   File "/usr/lib/python3.10/importlib/__init__.py", line 126, in import_module
-[face_recognition-4]     return _bootstrap._gcd_import(name[level:], package, level)
-[face_recognition-4]   File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
-[face_recognition-4]   File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
-[face_recognition-4]   File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
-[face_recognition-4]   File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
-[face_recognition-4]   File "<frozen importlib._bootstrap_external>", line 883, in exec_module
-[face_recognition-4]   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-[face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/python3.10/site-packages/face_lock/face_recognition.py", line 8, in <module>
-[face_recognition-4]     import face_recognition as face_recog_lib  # type: ignore
-[face_recognition-4] ModuleNotFoundError: No module named 'face_recognition'
-[ERROR] [face_recognition-4]: process has died [pid 674, exit code 1, cmd '/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition --ros-args -r __node:=face_recognition -r __ns:=/'].
+facelock@facelock-desktop:~/FaceLock$ docker-compose build
+Building robot
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
 
+Sending build context to Docker daemon  13.72MB
+Step 1/17 : FROM --platform=linux/arm64 ros:humble-ros-base
+ ---> 083da6606344
+Step 2/17 : USER root
+ ---> Using cache
+ ---> 6dd22295b8ac
+Step 3/17 : ARG USERNAME=ros_user
+ ---> Using cache
+ ---> 48e683a83a44
+Step 4/17 : ARG USER_UID=1000
+ ---> Using cache
+ ---> 511592b9ec55
+Step 5/17 : ARG USER_GID=$USER_UID
+ ---> Using cache
+ ---> 4f4a50b7bd7c
+Step 6/17 : RUN groupadd --gid $USER_GID $USERNAME     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME     && usermod -aG video,dialout $USERNAME     && apt-get update && apt-get install -y sudo     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME     && chmod 0440 /etc/sudoers.d/$USERNAME
+ ---> Using cache
+ ---> 0fd74d1d4868
+Step 7/17 : RUN apt-get update && apt-get install -y     python3-pip     v4l-utils     ros-humble-vision-opencv     ros-humble-cv-bridge     ros-humble-v4l2-camera     libcamera-dev     ros-humble-vision-msgs     ros-humble-image-transport     && rm -rf /var/lib/apt/lists/*
+ ---> Using cache
+ ---> 8b92997886f7
+Step 8/17 : RUN pip3 install --upgrade pip
+ ---> Using cache
+ ---> 99493f875d5f
+Step 9/17 : RUN pip3 install mediapipe==0.10.9
+ ---> Using cache
+ ---> 3ac8da79d078
+Step 10/17 : RUN pip3 install pigpio opencv-python face_recognition flask
+ ---> Running in a3c46e458804
+Collecting pigpio
+  Downloading pigpio-1.78-py2.py3-none-any.whl.metadata (505 bytes)
+Collecting opencv-python
+  Downloading opencv_python-4.13.0.92-cp37-abi3-manylinux_2_28_aarch64.whl.metadata (19 kB)
+Collecting face_recognition
+  Downloading face_recognition-1.3.0-py2.py3-none-any.whl.metadata (21 kB)
+Collecting flask
+  Downloading flask-3.1.3-py3-none-any.whl.metadata (3.2 kB)
+Requirement already satisfied: numpy>=2 in ./usr/local/lib/python3.10/dist-packages (from opencv-python) (2.2.6)
+Collecting face-recognition-models>=0.3.0 (from face_recognition)
+  Downloading face_recognition_models-0.3.0.tar.gz (100.1 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100.1/100.1 MB 3.5 MB/s  0:00:28
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting Click>=6.0 (from face_recognition)
+  Downloading click-8.3.1-py3-none-any.whl.metadata (2.6 kB)
+Collecting dlib>=19.7 (from face_recognition)
+  Downloading dlib-20.0.0.tar.gz (3.3 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.3/3.3 MB 4.6 MB/s  0:00:00
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: Pillow in ./usr/local/lib/python3.10/dist-packages (from face_recognition) (12.1.1)
+Collecting blinker>=1.9.0 (from flask)
+  Downloading blinker-1.9.0-py3-none-any.whl.metadata (1.6 kB)
+Collecting itsdangerous>=2.2.0 (from flask)
+  Downloading itsdangerous-2.2.0-py3-none-any.whl.metadata (1.9 kB)
+Collecting jinja2>=3.1.2 (from flask)
+  Downloading jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+Collecting markupsafe>=2.1.1 (from flask)
+  Downloading markupsafe-3.0.3-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (2.7 kB)
+Collecting werkzeug>=3.1.0 (from flask)
+  Downloading werkzeug-3.1.7-py3-none-any.whl.metadata (4.0 kB)
+Downloading pigpio-1.78-py2.py3-none-any.whl (39 kB)
+Downloading opencv_python-4.13.0.92-cp37-abi3-manylinux_2_28_aarch64.whl (46.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 46.7/46.7 MB 4.2 MB/s  0:00:11
+Downloading face_recognition-1.3.0-py2.py3-none-any.whl (15 kB)
+Downloading flask-3.1.3-py3-none-any.whl (103 kB)
+Downloading blinker-1.9.0-py3-none-any.whl (8.5 kB)
+Downloading click-8.3.1-py3-none-any.whl (108 kB)
+Downloading itsdangerous-2.2.0-py3-none-any.whl (16 kB)
+Downloading jinja2-3.1.6-py3-none-any.whl (134 kB)
+Downloading markupsafe-3.0.3-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (22 kB)
+Downloading werkzeug-3.1.7-py3-none-any.whl (226 kB)
+Building wheels for collected packages: dlib, face-recognition-models
+  Building wheel for dlib (pyproject.toml): started
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): still running...
+  Building wheel for dlib (pyproject.toml): finished with status 'done'
+  Created wheel for dlib: filename=dlib-20.0.0-cp310-cp310-linux_aarch64.whl size=3112872 sha256=398ea1ab6057493858f0aede6084b33d741c5facb51c3898f748e7fd03d12dee
+  Stored in directory: /root/.cache/pip/wheels/97/bc/4a/1f441cf62ce4c81ad4f83f298cef0e5ff3af0577ffb4cdff2f
+  Building wheel for face-recognition-models (pyproject.toml): started
+  Building wheel for face-recognition-models (pyproject.toml): finished with status 'done'
+  Created wheel for face-recognition-models: filename=face_recognition_models-0.3.0-py2.py3-none-any.whl size=100566241 sha256=5813b07c14ed265a2a10036146c02cbf5a5ec11a4c8c64e30c2c4bbefff64985
+  Stored in directory: /root/.cache/pip/wheels/7a/eb/cf/e9eced74122b679557f597bb7c8e4c739cfcac526db1fd523d
+Successfully built dlib face-recognition-models
+Installing collected packages: pigpio, face-recognition-models, dlib, opencv-python, markupsafe, itsdangerous, Click, blinker, werkzeug, jinja2, face_recognition, flask
+
+Successfully installed Click-8.3.1 blinker-1.9.0 dlib-20.0.0 face-recognition-models-0.3.0 face_recognition-1.3.0 flask-3.1.3 itsdangerous-2.2.0 jinja2-3.1.6 markupsafe-3.0.3 opencv-python-4.13.0.92 pigpio-1.78 werkzeug-3.1.7
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+ ---> Removed intermediate container a3c46e458804
+ ---> c9f9e1991857
+Step 11/17 : RUN pip3 uninstall -y numpy && pip3 install "numpy<2"
+ ---> Running in 1791c89faf5a
+Found existing installation: numpy 2.2.6
+Uninstalling numpy-2.2.6:
+  Successfully uninstalled numpy-2.2.6
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+Collecting numpy<2
+  Downloading numpy-1.26.4-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl.metadata (62 kB)
+Downloading numpy-1.26.4-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (14.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 14.2/14.2 MB 5.8 MB/s  0:00:02
+Installing collected packages: numpy
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+opencv-contrib-python 4.13.0.92 requires numpy>=2; python_version >= "3.9", but you have numpy 1.26.4 which is incompatible.
+opencv-python 4.13.0.92 requires numpy>=2; python_version >= "3.9", but you have numpy 1.26.4 which is incompatible.
+Successfully installed numpy-1.26.4
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+ ---> Removed intermediate container 1791c89faf5a
+ ---> ccba906ca932
+Step 12/17 : RUN apt-get update && apt-get install -y x11-apps && rm -rf /var/lib/apt/lists/*
+ ---> Running in ded02896dcca
+Get:1 http://ports.ubuntu.com/ubuntu-ports jammy InRelease [270 kB]
+Get:2 http://ports.ubuntu.com/ubuntu-ports jammy-updates InRelease [128 kB]
+Get:3 http://ports.ubuntu.com/ubuntu-ports jammy-backports InRelease [127 kB]
+Get:4 http://ports.ubuntu.com/ubuntu-ports jammy-security InRelease [129 kB]
+Get:5 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 Packages [1758 kB]
+Get:6 http://packages.ros.org/ros2/ubuntu jammy InRelease [4682 B]
+Get:7 http://ports.ubuntu.com/ubuntu-ports jammy/universe arm64 Packages [17.2 MB]
+Get:8 http://packages.ros.org/ros2/ubuntu jammy/main Sources [1794 kB]
+Get:9 http://ports.ubuntu.com/ubuntu-ports jammy/multiverse arm64 Packages [224 kB]
+Get:10 http://ports.ubuntu.com/ubuntu-ports jammy/restricted arm64 Packages [24.2 kB]
+Get:11 http://packages.ros.org/ros2/ubuntu jammy/main arm64 Packages [1719 kB]
+Get:12 http://ports.ubuntu.com/ubuntu-ports jammy-updates/universe arm64 Packages [1665 kB]
+Get:13 http://ports.ubuntu.com/ubuntu-ports jammy-updates/restricted arm64 Packages [6869 kB]
+Get:14 http://ports.ubuntu.com/ubuntu-ports jammy-updates/main arm64 Packages [3952 kB]
+Get:15 http://ports.ubuntu.com/ubuntu-ports jammy-updates/multiverse arm64 Packages [47.7 kB]
+Get:16 http://ports.ubuntu.com/ubuntu-ports jammy-backports/universe arm64 Packages [33.7 kB]
+Get:17 http://ports.ubuntu.com/ubuntu-ports jammy-backports/main arm64 Packages [83.5 kB]
+Get:18 http://ports.ubuntu.com/ubuntu-ports jammy-security/main arm64 Packages [3631 kB]
+Get:19 http://ports.ubuntu.com/ubuntu-ports jammy-security/universe arm64 Packages [1360 kB]
+Get:20 http://ports.ubuntu.com/ubuntu-ports jammy-security/restricted arm64 Packages [6669 kB]
+Get:21 http://ports.ubuntu.com/ubuntu-ports jammy-security/multiverse arm64 Packages [41.2 kB]
+Fetched 47.7 MB in 9s (5214 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  bsdextrautils groff-base libpipeline1 libuchardet0 libxkbfile1 libxmuu1
+  man-db xbitmaps
+Suggested packages:
+  groff apparmor less www-browser mesa-utils
+The following NEW packages will be installed:
+  bsdextrautils groff-base libpipeline1 libuchardet0 libxkbfile1 libxmuu1
+  man-db x11-apps xbitmaps
+0 upgraded, 9 newly installed, 0 to remove and 204 not upgraded.
+Need to get 3076 kB of archives.
+After this operation, 9626 kB of additional disk space will be used.
+Get:1 http://ports.ubuntu.com/ubuntu-ports jammy-updates/main arm64 bsdextrautils arm64 2.37.2-4ubuntu3.5 [70.4 kB]
+Get:2 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 libuchardet0 arm64 0.0.7-1build2 [77.3 kB]
+Get:3 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 groff-base arm64 1.22.4-8build1 [917 kB]
+Get:4 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 libpipeline1 arm64 1.5.5-1 [23.2 kB]
+Get:5 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 libxmuu1 arm64 2:1.1.3-3 [10.4 kB]
+Get:6 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 man-db arm64 2.10.2-1 [1181 kB]
+Get:7 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 libxkbfile1 arm64 1:1.1.0-1build3 [71.2 kB]
+Get:8 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 x11-apps arm64 7.7+8build2 [702 kB]
+Get:9 http://ports.ubuntu.com/ubuntu-ports jammy/main arm64 xbitmaps all 1.1.1-2.1ubuntu1 [23.4 kB]
+debconf: delaying package configuration, since apt-utils is not installed
+Fetched 3076 kB in 1s (5510 kB/s)
+Selecting previously unselected package bsdextrautils.
+(Reading database ... 62579 files and directories currently installed.)
+Preparing to unpack .../0-bsdextrautils_2.37.2-4ubuntu3.5_arm64.deb ...
+Unpacking bsdextrautils (2.37.2-4ubuntu3.5) ...
+Selecting previously unselected package libuchardet0:arm64.
+Preparing to unpack .../1-libuchardet0_0.0.7-1build2_arm64.deb ...
+Unpacking libuchardet0:arm64 (0.0.7-1build2) ...
+Selecting previously unselected package groff-base.
+Preparing to unpack .../2-groff-base_1.22.4-8build1_arm64.deb ...
+Unpacking groff-base (1.22.4-8build1) ...
+Selecting previously unselected package libpipeline1:arm64.
+Preparing to unpack .../3-libpipeline1_1.5.5-1_arm64.deb ...
+Unpacking libpipeline1:arm64 (1.5.5-1) ...
+Selecting previously unselected package libxmuu1:arm64.
+Preparing to unpack .../4-libxmuu1_2%3a1.1.3-3_arm64.deb ...
+Unpacking libxmuu1:arm64 (2:1.1.3-3) ...
+Selecting previously unselected package man-db.
+Preparing to unpack .../5-man-db_2.10.2-1_arm64.deb ...
+Unpacking man-db (2.10.2-1) ...
+Selecting previously unselected package libxkbfile1:arm64.
+Preparing to unpack .../6-libxkbfile1_1%3a1.1.0-1build3_arm64.deb ...
+Unpacking libxkbfile1:arm64 (1:1.1.0-1build3) ...
+Selecting previously unselected package x11-apps.
+Preparing to unpack .../7-x11-apps_7.7+8build2_arm64.deb ...
+Unpacking x11-apps (7.7+8build2) ...
+Selecting previously unselected package xbitmaps.
+Preparing to unpack .../8-xbitmaps_1.1.1-2.1ubuntu1_all.deb ...
+Unpacking xbitmaps (1.1.1-2.1ubuntu1) ...
+Setting up libpipeline1:arm64 (1.5.5-1) ...
+Setting up bsdextrautils (2.37.2-4ubuntu3.5) ...
+update-alternatives: using /usr/bin/write.ul to provide /usr/bin/write (write) in auto mode
+update-alternatives: warning: skip creation of /usr/share/man/man1/write.1.gz because associated file /usr/share/man/man1/write.ul.1.gz (of link group write) doesn't exist
+Setting up libuchardet0:arm64 (0.0.7-1build2) ...
+Setting up libxkbfile1:arm64 (1:1.1.0-1build3) ...
+Setting up libxmuu1:arm64 (2:1.1.3-3) ...
+Setting up xbitmaps (1.1.1-2.1ubuntu1) ...
+Setting up groff-base (1.22.4-8build1) ...
+Setting up man-db (2.10.2-1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (TERM is not set, so the dialog frontend is not usable.)
+debconf: falling back to frontend: Readline
+Building database of manual pages ...
+Created symlink /etc/systemd/system/timers.target.wants/man-db.timer → /lib/systemd/system/man-db.timer.
+Setting up x11-apps (7.7+8build2) ...
+Processing triggers for libc-bin (2.35-0ubuntu3.13) ...
+ ---> Removed intermediate container ded02896dcca
+ ---> 9db75b3d734c
+Step 13/17 : RUN chmod 700 /root/.ssh && chmod 600 /root/.ssh/* || true
+ ---> Running in e1776b53467e
+chmod: cannot access '/root/.ssh': No such file or directory
+ ---> Removed intermediate container e1776b53467e
+ ---> 1d7a2fde0c03
+Step 14/17 : RUN echo "\n# Custom FaceLock Aliases and ROS2 setup" >> /root/.bashrc     && echo "alias sbrc='source ~/.bashrc'" >> /root/.bashrc     && echo "alias cbrc='code ~/.bashrc'" >> /root/.bashrc     && echo "alias colconbuild='cd /workspaces/FaceLock && colcon build && source /workspaces/FaceLock/install/setup.bash'" >> /root/.bashrc     && echo "alias cleancolconbuild='cd /workspaces/FaceLock && rm -rf build/ install/ log/ && colcon build && source /workspaces/FaceLock/install/setup.bash'" >> /root/.bashrc     && echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc     && echo "source /workspaces/FaceLock/install/setup.bash" >> /root/.bashrc
+ ---> Running in 8024b30eaf86
+ ---> Removed intermediate container 8024b30eaf86
+ ---> 1680419213aa
+Step 15/17 : USER $USERNAME
+ ---> Running in 4b8f33b2da21
+ ---> Removed intermediate container 4b8f33b2da21
+ ---> 316c630f8534
+Step 16/17 : WORKDIR /workspaces/FaceLock
+ ---> Running in fbf23c8292d0
+ ---> Removed intermediate container fbf23c8292d0
+ ---> 0fa2781fa81e
+Step 17/17 : RUN echo "\n# Custom FaceLock Aliases and ROS2 setup" >> /home/$USERNAME/.bashrc     && echo "alias sbrc='source ~/.bashrc'" >> /home/$USERNAME/.bashrc     && echo "alias cbrc='code ~/.bashrc'" >> /home/$USERNAME/.bashrc     && echo "alias colconbuild='cd /workspaces/FaceLock && colcon build && source /workspaces/FaceLock/install/setup.bash'" >> /home/$USERNAME/.bashrc     && echo "alias cleancolconbuild='cd /workspaces/FaceLock && rm -rf build/ install/ log/ && colcon build && source /workspaces/FaceLock/install/setup.bash'" >> /home/$USERNAME/.bashrc     && echo "alias facelock='cd /workspaces/FaceLock && ros2 launch face_lock startup.launch.py'" >> /home/$USERNAME/.bashrc     && echo "source /opt/ros/humble/setup.bash" >> /home/$USERNAME/.bashrc     && echo "source /workspaces/FaceLock/install/setup.bash" >> /home/$USERNAME/.bashrc
+ ---> Running in 805d10e05bf9
+ ---> Removed intermediate container 805d10e05bf9
+ ---> ef2f60f61b81
+Successfully built ef2f60f61b81
+Successfully tagged facelock_robot:latest
