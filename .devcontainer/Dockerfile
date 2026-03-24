@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip3 install --upgrade pip
 
 # Install MediaPipe via pip
-RUN pip3 install mediapipe-rpi4
+RUN pip3 install mediapipe=0.10.9
 
 # Install Hardware Libraries
 # Note: numpy<2 required for cv_bridge compatibility with ROS2 Humble
