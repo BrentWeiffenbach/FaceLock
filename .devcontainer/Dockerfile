@@ -1,4 +1,4 @@
-FROM --platform=linux/arm64 osrf/ros:humble-desktop
+FROM --platform=linux/arm64 ros:humble-ros-base
 
 USER root
 

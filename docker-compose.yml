@@ -1,7 +1,6 @@
 version: "3.8"
 services:
   robot:
-    platform: linux/arm64
     build:
       context: .
       dockerfile: .devcontainer/Dockerfile
@@ -17,4 +16,4 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     tty: true
     stdin_open: true
-    command: /bin/bash -c "source /opt/ros/humble/setup.bash && colcon build && source install/setup.bash"
+    command: sleep infinity
