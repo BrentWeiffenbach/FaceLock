@@ -30,6 +30,7 @@ setup(
             "pi_hardware = face_lock.pi_hardware:main",
             "camera = face_lock.camera:main",
             "face_recognition = face_lock.face_recognition:main",
+            "password_gui = face_lock.password_gui:main",
         ],
     },
 )

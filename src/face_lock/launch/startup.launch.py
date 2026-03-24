@@ -1,8 +1,7 @@
 from launch import LaunchDescription
-from launch_ros.actions import LifecycleNode
-from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import LifecycleNode, Node
 
 
 def generate_launch_description():
@@ -38,6 +37,12 @@ def generate_launch_description():
                 package="face_lock",
                 executable="arm_controller",
                 name="arm_controller",
+                namespace="",
+            ),
+            LifecycleNode(
+                package="face_lock",
+                executable="password_gui",
+                name="password_gui",
                 namespace="",
             ),
         ]

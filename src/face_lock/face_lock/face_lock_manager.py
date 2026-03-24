@@ -1,3 +1,4 @@
+import os
 from enum import Enum, auto
 from typing import Optional
 
@@ -15,6 +16,8 @@ from robot_interfaces.msg import FaceBlendshapes
 # region Init
 
 DEACTIVATE_TIME = 15.0
+IDENTITIES_DIR = "/workspaces/FaceLock/src/face_lock/data/identities"
+PASSWORDS_DIR = "/workspaces/FaceLock/src/face_lock/data/passwords"
 
 
 class RobotState(Enum):
@@ -55,6 +58,9 @@ class FaceLockManager(Node):
         self.blendshape_sub: Subscription = self.create_subscription(
             FaceBlendshapes, "/face_recognition/blendshapes", self.password_cb, 10
         )
+        self.password_matched_sub: Subscription = self.create_subscription(
+            Bool, "/face_recognition/password_matched", self.password_matched_cb, 10
+        )
 
         # Services
         self.setup_srv = self.create_service(
@@ -79,31 +85,35 @@ class FaceLockManager(Node):
         self.arm_controller_state = self.create_client(
             ChangeState, "/arm_controller/change_state"
         )
+        self.password_gui_state = self.create_client(
+            ChangeState, "/password_gui/change_state"
+        )
 
         # Track configuration and activation state
         self.configured = {
             "camera": False,
             "face_recognition": False,
             "arm_controller": False,
-            "setup_gui": False,
+            "password_gui": False,
         }
         self.configuring = {
             "camera": False,
             "face_recognition": False,
             "arm_controller": False,
-            "setup_gui": False,
+            "password_gui": False,
         }
         self.activated = {
             "camera": False,
             "face_recognition": False,
             "arm_controller": False,
-            "setup_gui": False,
+            "password_gui": False,
         }
 
         self._all_clients = [
             (self.camera_state, "camera"),
             (self.face_recognition_state, "face_recognition"),
             (self.arm_controller_state, "arm_controller"),
+            (self.password_gui_state, "password_gui"),
         ]
 
         # Start timer to configure nodes after startup
@@ -115,12 +125,14 @@ class FaceLockManager(Node):
         )
         self.deactivate_timer.cancel()
 
-        # Password management
-        self._password_set = False
-        self.password: list[FaceBlendshapes] = []
-        # TODO: Load password blendshapes from file or parameter
-        self.entered_password: list[FaceBlendshapes] = []
-
+        # Password management — auto-detect if setup was completed in a previous run
+        self._password_set = self._has_saved_data()
+        if self._password_set:
+            self.get_logger().info(
+                "Saved identity/password data found — system ready for CHECKING"
+            )
+        else:
+            self.get_logger().warn("No saved data found — please run Setup first")
         self._robot_state: RobotState = RobotState.DISABLED
 
     # region State
@@ -143,80 +155,117 @@ class FaceLockManager(Node):
             self._robot_state = new_state
             self._on_state_enter(new_state)
 
-    def _on_state_enter(self, state: RobotState) -> None:
-        if state == RobotState.DISABLED:
-            self.deactivate_timer.cancel()
-            self.entered_password.clear()
-            for client, name in self._all_clients:
-                self.deactivate_node(client, name)
-        elif state == RobotState.SETUP:
-            self.get_logger().info(
-                "Entering SETUP state, activating camera and face_recognition nodes"
-            )
-            clients = [
-                (self.camera_state, "camera"),
-                (self.face_recognition_state, "face_recognition"),
-            ]
-            for client, name in clients:
-                self.activate_node(client, name)
+    @staticmethod
+    def _has_saved_data() -> bool:
+        """Return True if at least one identity file exists on disk."""
+        if not os.path.isdir(IDENTITIES_DIR):
+            return False
+        return any(f.endswith(".npy") for f in os.listdir(IDENTITIES_DIR))
 
-        elif state == RobotState.CHECKING:
-            clients = [
-                (self.camera_state, "camera"),
-                (self.face_recognition_state, "face_recognition"),
-                (self.arm_controller_state, "arm_controller"),
-            ]
-            for client, name in clients:
-                self.activate_node(client, name)
-            self.deactivate_timer.reset()
+    def _on_state_enter(self, state: RobotState) -> None:
+        _handlers = {
+            RobotState.DISABLED: self._enter_disabled,
+            RobotState.SETUP: self._enter_setup,
+            RobotState.CHECKING: self._enter_checking,
+            RobotState.UNLOCKING: self._enter_unlocking,
+            RobotState.OPEN: self._enter_open,
+            RobotState.LOCKING: self._enter_locking,
+        }
+        handler = _handlers.get(state)
+        if handler:
+            handler()
+
+    def _enter_disabled(self) -> None:
+        self.get_logger().info("Entering DISABLED state, deactivating all nodes")
+        self.deactivate_timer.cancel()
+        for client, name in self._all_clients:
+            self.deactivate_node(client, name)
+
+    def _enter_setup(self) -> None:
+        self.get_logger().info(
+            "Entering SETUP state, activating camera, face_recognition and password_gui nodes"
+        )
+        clients = [
+            (self.camera_state, "camera"),
+            (self.face_recognition_state, "face_recognition"),
+            (self.password_gui_state, "password_gui"),
+        ]
+        for client, name in clients:
+            self.activate_node(client, name)
+
+    def _enter_checking(self) -> None:
+        self.get_logger().info(
+            "Entering CHECKING state, activating camera, face_recognition and arm_controller nodes"
+        )
+        clients = [
+            (self.camera_state, "camera"),
+            (self.face_recognition_state, "face_recognition"),
+            (self.arm_controller_state, "arm_controller"),
+        ]
+        for client, name in clients:
+            self.activate_node(client, name)
+        self.deactivate_timer.reset()
+
+    def _enter_unlocking(self) -> None:
+        self.get_logger().info(
+            "Entering UNLOCKING state, unlocking door and resetting arm"
+        )
+        self.deactivate_timer.cancel()
+        self.unlock_door_srv.wait_for_service()
+        unlock_req = Trigger.Request()
+        unlock_future = self.unlock_door_srv.call_async(unlock_req)
+
+        self.reset_arm_srv.wait_for_service()
+        reset_req = Trigger.Request()
+        reset_future = self.reset_arm_srv.call_async(reset_req)
+
+        def both_done_cb(_):
+            if unlock_future.done() and reset_future.done():
+                self.unlock_done_cb(unlock_future, reset_future)
+            else:
+                if not unlock_future.done():
+                    unlock_future.add_done_callback(both_done_cb)
+                if not reset_future.done():
+                    reset_future.add_done_callback(both_done_cb)
+
+        unlock_future.add_done_callback(both_done_cb)
+        reset_future.add_done_callback(both_done_cb)
+
+    def _enter_open(self) -> None:
+        self.get_logger().info("Entering OPEN state, waiting for door to close")
+        self.deactivate_timer.cancel()
+        clients = [
+            (self.camera_state, "camera"),
+            (self.face_recognition_state, "face_recognition"),
+        ]
+        for client, name in clients:
+            self.deactivate_node(client, name)
+
+    def _enter_locking(self) -> None:
+        self.get_logger().info("Entering LOCKING state, locking door")
+        self.lock_door_srv.wait_for_service()
+        lock_req = Trigger.Request()
+        future = self.lock_door_srv.call_async(lock_req)
+        future.add_done_callback(self.lock_done_cb)
 
     # region Sub Callbacks
     def pir_cb(self, msg: Bool) -> None:
         if msg.data and self.robot_state in (RobotState.DISABLED, RobotState.CHECKING):
-            self.get_logger().info(f"PIR sensor triggered: {msg.data}")
-            self.deactivate_timer.reset()
+            self.get_logger().info(
+                f"PIR sensor triggered: {msg.data} | Robot State: {self.robot_state.name}"
+            )
             if self.robot_state == RobotState.DISABLED:
                 self.robot_state = RobotState.CHECKING
+            else:
+                self.deactivate_timer.reset()
 
     def password_cb(self, msg: FaceBlendshapes) -> None:
-        if self.robot_state != RobotState.CHECKING:
-            return
-        self.get_logger().info("Blendshapes received, resetting deactivate timer")
-        self.deactivate_timer.reset()
+        if self.robot_state == RobotState.CHECKING:
+            self.deactivate_timer.reset()
 
-        # face_recognition node will only publish blendshapes if the identity is verified
-        # TODO: Figure out how to compare the blendshapes to a password
-        self.entered_password.append(msg)
-        for i in range(min(len(self.entered_password), len(self.password))):
-            if self.entered_password[i] != self.password[i]:
-                self.get_logger().info("Incorrect password attempt")
-                self.entered_password.clear()
-                return
-        if len(self.entered_password) == len(self.password):
-            self.get_logger().info("Correct password entered, unlocking door")
-
-            self.unlock_door_srv.wait_for_service()
-            unlock_req = Trigger.Request()
-            unlock_future = self.unlock_door_srv.call_async(unlock_req)
-
-            self.reset_arm_srv.wait_for_service()
-            reset_req = Trigger.Request()
-            reset_future = self.reset_arm_srv.call_async(reset_req)
-
-            # Wait for both futures to complete before calling unlock_done_cb
-            def both_done_cb(_):
-                if unlock_future.done() and reset_future.done():
-                    self.unlock_done_cb(unlock_future, reset_future)
-                else:
-                    # If not both done, re-add the callback to the other future
-                    if not unlock_future.done():
-                        unlock_future.add_done_callback(both_done_cb)
-                    if not reset_future.done():
-                        reset_future.add_done_callback(both_done_cb)
-
-            unlock_future.add_done_callback(both_done_cb)
-            reset_future.add_done_callback(both_done_cb)
-
+    def password_matched_cb(self, msg: Bool) -> None:
+        if msg.data and self.robot_state == RobotState.CHECKING:
+            self.get_logger().info("Password matched — unlocking door")
             self.robot_state = RobotState.UNLOCKING
 
     def button_cb(self, msg: Bool) -> None:
@@ -224,10 +273,6 @@ class FaceLockManager(Node):
             self.get_logger().info(
                 "Door button indicates door has closed, locking door"
             )
-            self.lock_door_srv.wait_for_service()
-            lock_req = Trigger.Request()
-            future = self.lock_door_srv.call_async(lock_req)
-            future.add_done_callback(self.lock_done_cb)
             self.robot_state = RobotState.LOCKING
 
     # region Services
@@ -244,7 +289,7 @@ class FaceLockManager(Node):
     def complete_setup_cb(
         self, req: Trigger.Request, res: Trigger.Response
     ) -> Trigger.Response:
-        self._password_set = True
+        self._password_set = self._has_saved_data()
         self.get_logger().info("Setup complete, returning to DISABLED state")
         self.robot_state = RobotState.DISABLED
         res.success = True
@@ -267,18 +312,7 @@ class FaceLockManager(Node):
             self.get_logger().error(
                 "Failed to unlock door or reset arm, trying again..."
             )
-            self.unlock_door_srv.wait_for_service()
-            unlock_req = Trigger.Request()
-            unlock_future = self.unlock_door_srv.call_async(unlock_req)
-            self.reset_arm_srv.wait_for_service()
-            reset_req = Trigger.Request()
-            reset_future = self.reset_arm_srv.call_async(reset_req)
-            unlock_future.add_done_callback(
-                lambda f: self.unlock_done_cb(unlock_future, reset_future)
-            )
-            reset_future.add_done_callback(
-                lambda f: self.unlock_done_cb(unlock_future, reset_future)
-            )
+            self._enter_unlocking()
 
     def lock_done_cb(self, fut: Future) -> None:
         result = fut.result()
@@ -287,10 +321,7 @@ class FaceLockManager(Node):
             self.robot_state = RobotState.DISABLED
         elif result and result.success is False:
             self.get_logger().error("Failed to lock door, trying again...")
-            self.lock_door_srv.wait_for_service()
-            lock_req = Trigger.Request()
-            future = self.lock_door_srv.call_async(lock_req)
-            future.add_done_callback(self.lock_done_cb)
+            self._enter_locking()
 
     # region Lifecycle
     def configure_nodes(self) -> None:

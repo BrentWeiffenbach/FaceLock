@@ -12,6 +12,7 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FaceBlendshapes.msg"
+  "srv/SetName.srv"
   DEPENDENCIES std_msgs
 )
 
