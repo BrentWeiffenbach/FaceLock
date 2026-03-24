@@ -1,42 +1,44 @@
-facelock@facelock-desktop:~/FaceLock$ docker-compose up -d
-Building robot
-DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
-            Install the buildx component to build images with BuildKit:
-            https://docs.docker.com/go/buildx/
-
-Sending build context to Docker daemon  8.494MB
-Step 1/17 : FROM --platform=linux/arm64 osrf/ros:humble-desktop
-humble-desktop: Pulling from osrf/ros
-Digest: sha256:23e47bb458490403357ded3dceb678406a295a6ae1d9a00fa72ede93efe03bb0
-Status: Downloaded newer image for osrf/ros:humble-desktop
-
-WARNING: Pulled image with specified platform (linux/arm64), but the resulting image's configured platform (linux/amd64) does not match.
-This is most likely caused by a bug in the build system that created the fetched image (osrf/ros:humble-desktop).
-Please notify the image author to correct the configuration.
- ---> 2498a96055e4
-Step 2/17 : USER root
- ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in 68813c430dce
- ---> Removed intermediate container 68813c430dce
- ---> 71f4affce9aa
-Step 3/17 : ARG USERNAME=ros_user
- ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in ebddd51c925c
- ---> Removed intermediate container ebddd51c925c
- ---> 1ff5c3df9cb0
-Step 4/17 : ARG USER_UID=1000
- ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in e7e33bd43f59
- ---> Removed intermediate container e7e33bd43f59
- ---> 947b76dd153b
-Step 5/17 : ARG USER_GID=$USER_UID
- ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in 49a28ebb1f3f
- ---> Removed intermediate container 49a28ebb1f3f
- ---> 5b2674efc2a2
-Step 6/17 : RUN groupadd --gid $USER_GID $USERNAME     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME     && usermod -aG video,dialout $USERNAME     && apt-get update && apt-get install -y sudo     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME     && chmod 0440 /etc/sudoers.d/$USERNAME
- ---> [Warning] The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested
- ---> Running in c855eaba895c
-exec /bin/sh: exec format error
-The command '/bin/sh -c groupadd --gid $USER_GID $USERNAME     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME     && usermod -aG video,dialout $USERNAME     && apt-get update && apt-get install -y sudo     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME     && chmod 0440 /etc/sudoers.d/$USERNAME' returned a non-zero code: 255
-ERROR: Service 'robot' failed to build : Build failed
+ros_user@facelock-desktop:/workspaces/FaceLock$ ros2 launch face_lock startup.launch.py 
+[INFO] [launch]: All log files can be found below /home/ros_user/.ros/log/2026-03-24-00-22-51-332251-facelock-desktop-89
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [pi_hardware-1]: process started with pid [101]
+[INFO] [face_lock_manager-2]: process started with pid [103]
+[INFO] [camera-3]: process started with pid [105]
+[INFO] [face_recognition-4]: process started with pid [107]
+[INFO] [arm_controller-5]: process started with pid [109]
+[face_recognition-4] Traceback (most recent call last):
+[face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition", line 33, in <module>
+[face_recognition-4]     sys.exit(load_entry_point('face-lock==0.0.1', 'console_scripts', 'face_recognition')())
+[face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition", line 25, in importlib_load_entry_point
+[face_recognition-4]     return next(matches).load()
+[face_recognition-4]   File "/usr/lib/python3.10/importlib/metadata/__init__.py", line 171, in load
+[face_recognition-4]     module = import_module(match.group('module'))
+[face_recognition-4]   File "/usr/lib/python3.10/importlib/__init__.py", line 126, in import_module
+[face_recognition-4]     return _bootstrap._gcd_import(name[level:], package, level)
+[face_recognition-4]   File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+[face_recognition-4]   File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+[face_recognition-4]   File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+[face_recognition-4]   File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+[face_recognition-4]   File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+[face_recognition-4]   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+[face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/python3.10/site-packages/face_lock/face_recognition.py", line 4, in <module>
+[face_recognition-4]     import mediapipe as mp
+[face_recognition-4]   File "/usr/local/lib/python3.10/dist-packages/mediapipe/__init__.py", line 16, in <module>
+[face_recognition-4]     from mediapipe.python import *
+[face_recognition-4]   File "/usr/local/lib/python3.10/dist-packages/mediapipe/python/__init__.py", line 17, in <module>
+[face_recognition-4]     from mediapipe.python._framework_bindings import resource_util
+[face_recognition-4] ModuleNotFoundError: No module named 'mediapipe.python._framework_bindings'
+[ERROR] [face_recognition-4]: process has died [pid 107, exit code 1, cmd '/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition --ros-args -r __node:=face_recognition -r __ns:=/'].
+[face_lock_manager-2] [WARN] [1774311776.447862058] [face_lock_manager]: Service not available for configuration: /camera/change_state
+[face_lock_manager-2] [WARN] [1774311777.453431366] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
+[face_lock_manager-2] [INFO] [1774311777.457454505] [face_lock_manager]: Configuring node: /arm_controller/change_state
+[arm_controller-5] [INFO] [1774311777.679288131] [arm_controller]: Configuring arm controller
+[face_lock_manager-2] [INFO] [1774311777.972882200] [face_lock_manager]: Configuring node: /camera/change_state
+[camera-3] [INFO] [1774311778.119044465] [camera]: Configuring camera
+[camera-3] [INFO] [1774311778.447234215] [camera]: Camera configured: 1920x1080 @ 60.0 fps
+[face_lock_manager-2] [WARN] [1774311778.997943286] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
+[face_lock_manager-2] [WARN] [1774311780.012903858] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
+[face_lock_manager-2] [INFO] [1774311780.019633337] [face_lock_manager]: arm_controller node configured successfully
+[face_lock_manager-2] [INFO] [1774311780.028045111] [face_lock_manager]: camera node configured successfully
+[face_lock_manager-2] [WARN] [1774311781.039838922] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
+[face_lock_manager-2] [WARN] [1774311782.051448532] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
