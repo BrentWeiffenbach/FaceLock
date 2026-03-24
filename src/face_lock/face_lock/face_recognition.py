@@ -9,7 +9,7 @@ import face_recognition as face_recog_lib  # type: ignore
 import mediapipe as mp
 import numpy as np
 import rclpy
-from mediapipe.tasks.python.vision import drawing_styles, drawing_utils
+from mediapipe.python.solutions import drawing_styles, drawing_utils
 from mediapipe.tasks.python.vision.core.vision_task_running_mode import (
     VisionTaskRunningMode as RunningMode,
 )
