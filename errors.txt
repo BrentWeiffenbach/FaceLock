@@ -1,17 +1,3 @@
-ros_user@facelock-desktop:/workspaces/FaceLock$ python3 -c "from mediapipe.python.solutions import drawing_styles; print('yup')"
-yup
-
-
-ros_user@facelock-desktop:/workspaces/FaceLock$ source install/setup.bash 
-ros_user@facelock-desktop:/workspaces/FaceLock$ ros2 launch face_lock startup.launch.py 
-[INFO] [launch]: All log files can be found below /home/ros_user/.ros/log/2026-03-24-19-25-39-852404-facelock-desktop-790
-[INFO] [launch]: Default logging verbosity is set to INFO
-[INFO] [pi_hardware-1]: process started with pid [802]
-[INFO] [face_lock_manager-2]: process started with pid [804]
-[INFO] [camera-3]: process started with pid [806]
-[INFO] [face_recognition-4]: process started with pid [808]
-[INFO] [arm_controller-5]: process started with pid [810]
-[face_lock_manager-2] [WARN] [1774380343.821166464] [face_lock_manager]: Service not available for configuration: /camera/change_state
 [face_recognition-4] Traceback (most recent call last):
 [face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition", line 33, in <module>
 [face_recognition-4]     sys.exit(load_entry_point('face-lock==0.0.1', 'console_scripts', 'face_recognition')())
@@ -27,18 +13,8 @@ ros_user@facelock-desktop:/workspaces/FaceLock$ ros2 launch face_lock startup.la
 [face_recognition-4]   File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
 [face_recognition-4]   File "<frozen importlib._bootstrap_external>", line 883, in exec_module
 [face_recognition-4]   File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-[face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/python3.10/site-packages/face_lock/face_recognition.py", line 9, in <module>
-[face_recognition-4]     from mediapipe.tasks.python.vision import drawing_styles, drawing_utils
-[face_recognition-4] ImportError: cannot import name 'drawing_styles' from 'mediapipe.tasks.python.vision' (/home/ros_user/.local/lib/python3.10/site-packages/mediapipe/tasks/python/vision/__init__.py)
-[face_lock_manager-2] [WARN] [1774380344.830156896] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
-[face_lock_manager-2] [INFO] [1774380344.836055974] [face_lock_manager]: Configuring node: /arm_controller/change_state
-[face_lock_manager-2] [INFO] [1774380344.844731324] [face_lock_manager]: Configuring node: /camera/change_state
-[camera-3] [INFO] [1774380345.021402834] [camera]: Configuring camera
-[arm_controller-5] [INFO] [1774380345.040843257] [arm_controller]: Configuring arm controller
-[ERROR] [face_recognition-4]: process has died [pid 808, exit code 1, cmd '/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition --ros-args -r __node:=face_recognition -r __ns:=/'].
-[camera-3] [INFO] [1774380345.268194269] [camera]: Camera configured: 1920x1080 @ 60.0 fps
-[face_lock_manager-2] [WARN] [1774380345.864555055] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
-[face_lock_manager-2] [WARN] [1774380346.875111703] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
-[face_lock_manager-2] [INFO] [1774380346.881296335] [face_lock_manager]: arm_controller node configured successfully
-[face_lock_manager-2] [INFO] [1774380346.884655139] [face_lock_manager]: camera node configured successfully
-[face_lock_manager-2] [WARN] [1774380347.894433928] [face_lock_manager]: Service not available for configuration: /face_recognition/change_state
+[face_recognition-4]   File "/workspaces/FaceLock/install/face_lock/lib/python3.10/site-packages/face_lock/face_recognition.py", line 8, in <module>
+[face_recognition-4]     import face_recognition as face_recog_lib  # type: ignore
+[face_recognition-4] ModuleNotFoundError: No module named 'face_recognition'
+[ERROR] [face_recognition-4]: process has died [pid 674, exit code 1, cmd '/workspaces/FaceLock/install/face_lock/lib/face_lock/face_recognition --ros-args -r __node:=face_recognition -r __ns:=/'].
+
