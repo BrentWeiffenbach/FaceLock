@@ -26,6 +26,7 @@ class CameraNode(LifecycleNode):
         self.width: int = 1920
         self.height: int = 1080
         self.image_pub: Optional[Publisher] = None
+        self.camera_index: int = 0
 
         # Declare parameters
         self.declare_parameter("camera_index", 0)
@@ -42,38 +43,64 @@ class CameraNode(LifecycleNode):
         width_param: Any = self.get_parameter("width").value
         height_param: Any = self.get_parameter("height").value
 
-        camera_index: int = (
+        self.camera_index = (
             int(camera_index_param) if camera_index_param is not None else 0
         )
-        self.fps = float(fps_param) if fps_param is not None else 60.0
-        width: int = int(width_param) if width_param is not None else 1920
-        height: int = int(height_param) if height_param is not None else 1080
-
-        # Initialize camera
-        self.cap = cv2.VideoCapture(camera_index)
-        if not self.cap.isOpened():
-            self.get_logger().error(f"Failed to open camera with index {camera_index}")
-            return TransitionCallbackReturn.FAILURE
-
-        # Set camera properties
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self.cap.set(cv2.CAP_PROP_FPS, self.fps)
-
-        # Get actual camera properties
-        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.fps = float(fps_param) if fps_param is not None else 30.0
+        self.width = int(width_param) if width_param is not None else 1920
+        self.height = int(height_param) if height_param is not None else 1080
 
         # Create publisher
         self.image_pub = self.create_lifecycle_publisher(Image, "~/image_raw", 10)
 
         self.get_logger().info(
-            f"Camera configured: {self.width}x{self.height} @ {self.fps} fps"
+            f"Camera parameters set: {self.width}x{self.height} @ {self.fps} fps"
         )
         return TransitionCallbackReturn.SUCCESS
 
     def on_activate(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info("Activating camera")
+
+        # Open camera with explicit V4L2 backend
+        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_V4L2)
+        if not self.cap.isOpened():
+            self.get_logger().error(
+                f"Failed to open camera with index {self.camera_index}"
+            )
+            return TransitionCallbackReturn.FAILURE
+
+        # Limit internal buffer to 1 frame to avoid stale-frame buildup
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        # Set camera properties
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        self.cap.set(cv2.CAP_PROP_FPS, self.fps)
+
+        # Read back actual camera properties
+        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # Verify the stream actually starts — read() triggers VIDIOC_STREAMON
+        stream_ok = False
+        for _ in range(30):
+            ret, _ = self.cap.read()
+            if ret:
+                stream_ok = True
+                break
+
+        if not stream_ok:
+            self.get_logger().error(
+                "Camera stream failed to start — check resolution/bandwidth"
+            )
+            self.cap.release()
+            self.cap = None
+            return TransitionCallbackReturn.FAILURE
+
+        self.get_logger().info(
+            f"Camera opened: {self.width}x{self.height} @ {self.fps} fps"
+        )
+
         # Create timer to capture and publish frames
         timer_period: float = 1.0 / self.fps
         self.timer = self.create_timer(timer_period, self.capture_and_publish)

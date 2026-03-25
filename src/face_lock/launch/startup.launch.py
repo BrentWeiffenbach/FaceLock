@@ -26,6 +26,7 @@ def generate_launch_description():
                 executable="camera",
                 name="camera",
                 namespace="",
+                parameters=[{"fps": 30.0, "width": 640, "height": 480}],
             ),
             LifecycleNode(
                 package="face_lock",

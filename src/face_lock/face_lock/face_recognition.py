@@ -9,6 +9,7 @@ import face_recognition as face_recog_lib  # type: ignore
 import mediapipe as mp
 import numpy as np
 import rclpy
+from mediapipe.framework.formats import landmark_pb2
 from mediapipe.python.solutions import drawing_styles, drawing_utils
 from mediapipe.tasks.python.vision.core.vision_task_running_mode import (
     VisionTaskRunningMode as RunningMode,
@@ -625,32 +626,44 @@ class FaceRecognitionNode(LifecycleNode):
         for idx in range(len(face_landmarks_list)):
             face_landmarks = face_landmarks_list[idx]
 
+            # The Tasks API returns a plain list; convert to protobuf for drawing_utils.
+            proto_landmarks = landmark_pb2.NormalizedLandmarkList()
+            proto_landmarks.landmark.extend(
+                landmark_pb2.NormalizedLandmark(x=lm.x, y=lm.y, z=lm.z)
+                for lm in face_landmarks
+            )
+
+            # The Tasks API Connection objects have .start/.end, not indices;
+            # convert to tuples so drawing_utils can subscript them.
+            def _conns(conn_list):
+                return [(c.start, c.end) for c in conn_list]
+
             # Draw the face landmarks.
             drawing_utils.draw_landmarks(
                 image=annotated_image,
-                landmark_list=face_landmarks,
-                connections=FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION,
+                landmark_list=proto_landmarks,
+                connections=_conns(FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION),
                 landmark_drawing_spec=None,
                 connection_drawing_spec=drawing_styles.get_default_face_mesh_tesselation_style(),
             )
             drawing_utils.draw_landmarks(
                 image=annotated_image,
-                landmark_list=face_landmarks,
-                connections=FaceLandmarksConnections.FACE_LANDMARKS_CONTOURS,
+                landmark_list=proto_landmarks,
+                connections=_conns(FaceLandmarksConnections.FACE_LANDMARKS_CONTOURS),
                 landmark_drawing_spec=None,
                 connection_drawing_spec=drawing_styles.get_default_face_mesh_contours_style(),
             )
             drawing_utils.draw_landmarks(
                 image=annotated_image,
-                landmark_list=face_landmarks,
-                connections=FaceLandmarksConnections.FACE_LANDMARKS_LEFT_IRIS,
+                landmark_list=proto_landmarks,
+                connections=_conns(FaceLandmarksConnections.FACE_LANDMARKS_LEFT_IRIS),
                 landmark_drawing_spec=None,
                 connection_drawing_spec=drawing_styles.get_default_face_mesh_iris_connections_style(),
             )
             drawing_utils.draw_landmarks(
                 image=annotated_image,
-                landmark_list=face_landmarks,
-                connections=FaceLandmarksConnections.FACE_LANDMARKS_RIGHT_IRIS,
+                landmark_list=proto_landmarks,
+                connections=_conns(FaceLandmarksConnections.FACE_LANDMARKS_RIGHT_IRIS),
                 landmark_drawing_spec=None,
                 connection_drawing_spec=drawing_styles.get_default_face_mesh_iris_connections_style(),
             )
