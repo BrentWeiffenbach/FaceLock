@@ -11,13 +11,12 @@ from rclpy.timer import Timer
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
+from face_lock.constants import IDENTITIES_DIR, PASSWORDS_DIR
 from robot_interfaces.msg import FaceBlendshapes
 
 # region Init
 
 DEACTIVATE_TIME = 15.0
-IDENTITIES_DIR = "/workspaces/FaceLock/src/face_lock/data/identities"
-PASSWORDS_DIR = "/workspaces/FaceLock/src/face_lock/data/passwords"
 
 
 class RobotState(Enum):

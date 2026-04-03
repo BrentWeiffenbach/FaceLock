@@ -25,6 +25,7 @@ from rclpy.node import Publisher
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
+from vision_msgs.msg import BoundingBox2D, Detection2D
 
 from face_lock.constants import (
     BLENDSHAPE_THRESHOLD,
@@ -77,6 +78,9 @@ class FaceRecognitionNode(LifecycleNode):
         )
         self.password_matched_pub: Publisher = self.create_lifecycle_publisher(
             Bool, "/face_recognition/password_matched", 10
+        )
+        self.detection_pub: Publisher = self.create_lifecycle_publisher(
+            Detection2D, "/face_recognition/detection", 10
         )
 
         for srv, cb in [
@@ -222,6 +226,8 @@ class FaceRecognitionNode(LifecycleNode):
                     self._last_log_time = now
                 return
 
+            self._publish_detection(msg, res)
+
             annotated = self.draw_landmarks_on_image(rgb, res)
             debug_msg = Image()
             debug_msg.header = msg.header
@@ -314,6 +320,31 @@ class FaceRecognitionNode(LifecycleNode):
 
         except Exception as e:
             self.get_logger().error(f"Image processing error: {e}")
+
+    def _publish_detection(self, msg: Image, res: FaceLandmarkerResult) -> None:
+        face_landmarks = res.face_landmarks[0]
+        xs = [max(0.0, min(1.0, float(lm.x))) for lm in face_landmarks]
+        ys = [max(0.0, min(1.0, float(lm.y))) for lm in face_landmarks]
+        if not xs or not ys:
+            return
+
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+
+        center_x = ((min_x + max_x) / 2.0) * float(msg.width)
+        center_y = ((min_y + max_y) / 2.0) * float(msg.height)
+        size_x = (max_x - min_x) * float(msg.width)
+        size_y = (max_y - min_y) * float(msg.height)
+
+        det = Detection2D()
+        det.header = msg.header
+        det.bbox = BoundingBox2D()
+        det.bbox.center.position.x = center_x
+        det.bbox.center.position.y = center_y
+        det.bbox.center.theta = 0.0
+        det.bbox.size_x = size_x
+        det.bbox.size_y = size_y
+        self.detection_pub.publish(det)
 
     def _check_password(self, active: set) -> None:
         """Advance per-password step counters; publish when a full sequence matches."""

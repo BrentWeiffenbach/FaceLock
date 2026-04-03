@@ -39,6 +39,7 @@ def generate_launch_description():
                 executable="arm_controller",
                 name="arm_controller",
                 namespace="",
+                parameters=[{"image_width": 640.0, "image_height": 480.0}],
             ),
             LifecycleNode(
                 package="face_lock",
