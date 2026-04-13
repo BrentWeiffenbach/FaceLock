@@ -3,7 +3,7 @@ import time
 import sys
 
 def main():
-    magnet_pin = 26
+    magnet_pin = 17
 
     # Connect to the local Pi's pigpio daemon
     pi = pigpio.pi()

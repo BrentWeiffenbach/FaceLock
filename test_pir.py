@@ -3,7 +3,7 @@ import time
 import sys
 
 def main():
-    pir_pin = 23
+    pir_pin = 24
 
     # Connect to the local Pi's pigpio daemon
     pi = pigpio.pi()

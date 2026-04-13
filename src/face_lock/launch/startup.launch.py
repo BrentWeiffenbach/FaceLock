@@ -9,7 +9,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("use_mock", default_value="true"),
+            DeclareLaunchArgument("use_mock", default_value="false"),
             # Permanent Nodes
             Node(
                 package="face_lock",

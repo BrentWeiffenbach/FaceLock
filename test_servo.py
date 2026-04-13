@@ -3,7 +3,7 @@ import time
 import sys
 
 def main():
-    servo_pin = 17
+    servo_pin = 23
 
     # Connect to the local Pi's pigpio daemon
     pi = pigpio.pi()
@@ -28,11 +28,8 @@ def main():
 
     try:
         print("Starting servo sweep test. Press Ctrl+C to quit.")
-        while True:
-            set_angle(500)   # ~0 degrees
-            set_angle(1500)  # ~90 degrees
-            set_angle(2500)  # ~180 degrees
-            set_angle(1500)  # ~90 degrees
+        set_angle(500)   # ~0 degrees
+        # set_angle(2500)  # ~180 degrees
 
     except KeyboardInterrupt:
         print("\nTest stopped by user.")

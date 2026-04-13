@@ -107,6 +107,19 @@ class FaceLockManager(Node):
             "arm_controller": False,
             "password_gui": False,
         }
+        self.activating = {
+            "camera": False,
+            "face_recognition": False,
+            "arm_controller": False,
+            "password_gui": False,
+        }
+        self.deactivating = {
+            "camera": False,
+            "face_recognition": False,
+            "arm_controller": False,
+            "password_gui": False,
+        }
+        self._state_transition_pending = False
 
         self._all_clients = [
             (self.camera_state, "camera"),
@@ -143,6 +156,12 @@ class FaceLockManager(Node):
     def robot_state(self, new_state: RobotState) -> None:
         if new_state == self._robot_state:
             return
+        # Prevent state transitions while lifecycle transitions are pending
+        if self._state_transition_pending and new_state != RobotState.DISABLED:
+            self.get_logger().warn(
+                f"Cannot transition to {new_state.name}: lifecycle transition still in progress"
+            )
+            return
         if self._password_set:
             self.get_logger().info(
                 f"State transition: {self._robot_state.name} -> {new_state.name}"
@@ -173,6 +192,19 @@ class FaceLockManager(Node):
         handler = _handlers.get(state)
         if handler:
             handler()
+        self._check_lifecycle_complete()
+
+    def _should_be_active(self, name: str) -> bool:
+        desired_by_state = {
+            RobotState.DISABLED: set(),
+            RobotState.SETUP: {"camera", "face_recognition", "password_gui"},
+            RobotState.CHECKING: {"camera", "face_recognition", "arm_controller"},
+            # Keep arm controller active while door is open to preserve current behavior.
+            RobotState.OPEN: {"arm_controller"},
+            RobotState.UNLOCKING: {"arm_controller"},
+            RobotState.LOCKING: set(),
+        }
+        return name in desired_by_state.get(self.robot_state, set())
 
     def _enter_disabled(self) -> None:
         self.get_logger().info("Entering DISABLED state, deactivating all nodes")
@@ -353,10 +385,16 @@ class FaceLockManager(Node):
         self, future: Future, client: Client, name: str
     ) -> None:
         self.configuring[name] = False
-        result = future.result()
+        try:
+            result = future.result()
+        except Exception as exc:
+            self.get_logger().error(f"Configure call failed for {name}: {exc}")
+            return
         if result is not None and result.success:
             self.get_logger().info(f"{name} node configured successfully")
             self.configured[name] = True
+            if self._should_be_active(name) and not self.activated[name]:
+                self.activate_node(client, name)
         else:
             self.get_logger().error(f"Failed to configure {name} node")
 
@@ -364,35 +402,73 @@ class FaceLockManager(Node):
         if self.activated[name]:
             self.get_logger().info(f"{name} already activated")
             return
+        if self.activating[name]:
+            return
+        if not self.configured[name]:
+            self.get_logger().info(f"{name} not configured yet, activation deferred")
+            return
+        if not client.service_is_ready():
+            self.get_logger().warn(f"Activation service not ready for {name}")
+            return
+        self.activating[name] = True
         req = ChangeState.Request()
         req.transition.id = 3  # Transition ID for "activate"
         future = client.call_async(req)
         future.add_done_callback(lambda f: self.handle_activate_result(f, name))
+        self._check_lifecycle_complete()
 
     def handle_activate_result(self, future: Future, name: str) -> None:
-        result = future.result()
-        if result is not None:
+        self.activating[name] = False
+        try:
+            result = future.result()
+        except Exception as exc:
+            self.get_logger().error(f"Activate call failed for {name}: {exc}")
+            self._check_lifecycle_complete()
+            return
+        if result is not None and result.success:
             self.get_logger().info(f"{name} activated successfully")
             self.activated[name] = True
         else:
             self.get_logger().error(f"Failed to activate {name}")
+        self._check_lifecycle_complete()
 
     def deactivate_node(self, client: Client, name: str) -> None:
         if not self.activated[name]:
             self.get_logger().info(f"{name} already deactivated")
             return
+        if self.deactivating[name]:
+            return
+        if not client.service_is_ready():
+            self.get_logger().warn(f"Deactivation service not ready for {name}")
+            return
+        self.deactivating[name] = True
         req = ChangeState.Request()
         req.transition.id = 4  # Transition ID for "deactivate"
         future = client.call_async(req)
         future.add_done_callback(lambda f: self.handle_deactivate_result(f, name))
+        self._check_lifecycle_complete()
 
     def handle_deactivate_result(self, future: Future, name: str) -> None:
-        result = future.result()
-        if result is not None:
+        self.deactivating[name] = False
+        try:
+            result = future.result()
+        except Exception as exc:
+            self.get_logger().error(f"Deactivate call failed for {name}: {exc}")
+            self._check_lifecycle_complete()
+            return
+        if result is not None and result.success:
             self.get_logger().info(f"{name} deactivated successfully")
             self.activated[name] = False
         else:
             self.get_logger().error(f"Failed to deactivate {name}")
+        self._check_lifecycle_complete()
+
+    def _check_lifecycle_complete(self) -> None:
+        """Check if all pending lifecycle transitions are complete."""
+        self._state_transition_pending = any(
+            self.activating[name] or self.deactivating[name]
+            for name in self.activating.keys()
+        )
 
     def deactivate_system(self) -> None:
         self.get_logger().info("Inactivity timeout, disabling system")
