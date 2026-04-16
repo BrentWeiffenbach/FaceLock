@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 import time
 from typing import List, Optional
 
@@ -63,6 +64,7 @@ class FaceRecognitionNode(LifecycleNode):
         self._cur_raw_image: Optional[np.ndarray] = None
         self.landmarker: Optional[FaceLandmarker] = None
         self._frame_count: int = 0
+        self._id_check_thread: Optional[threading.Thread] = None
 
         if not os.path.isfile(MODEL_PATH):
             self.get_logger().warn(f"Model missing: {MODEL_PATH}")
@@ -255,40 +257,24 @@ class FaceRecognitionNode(LifecycleNode):
             blend_msg.shape_names = [c.category_name for c in cats]
             self.blendshapes_pub.publish(blend_msg)
 
-            # --- Identity verification cache (runs at most once per ID_CHECK_INTERVAL) ---
+            # --- Identity verification (runs in background thread) ---
             if self._known_encodings:
-                now = time.monotonic()
-                if now - self._id_last_check >= ID_CHECK_INTERVAL:
-                    small = np.ascontiguousarray(rgb[::ID_REC_SCALE, ::ID_REC_SCALE])
-                    locs = face_recog_lib.face_locations(small)
-                    prev_verified = self._id_verified
-                    if locs:
-                        encs = face_recog_lib.face_encodings(small, locs)
-                        if encs:
-                            matches = face_recog_lib.compare_faces(
-                                self._known_encodings, encs[0]
-                            )
-                            matched = [
-                                self._known_names[i] for i, m in enumerate(matches) if m
-                            ]
-                            self._id_verified = bool(matched)
-                            self._id_matched_name = matched[0] if matched else ""
-                        else:
-                            self._id_verified = False
-                            self._id_matched_name = ""
-                    else:
-                        self._id_verified = False
-                        self._id_matched_name = ""
-                    self._id_last_check = now
-                    if self._id_verified != prev_verified:
-                        if self._id_verified:
-                            self.get_logger().info(
-                                f"Identity verified: {self._id_matched_name}"
-                            )
-                        else:
-                            self.get_logger().warn(
-                                "Identity lost: no registered face matched"
-                            )
+                now_id = time.monotonic()
+                if now_id - self._id_last_check >= ID_CHECK_INTERVAL:
+                    if (
+                        self._id_check_thread is None
+                        or not self._id_check_thread.is_alive()
+                    ):
+                        self._id_last_check = now_id
+                        frame_for_id = np.ascontiguousarray(
+                            rgb[::ID_REC_SCALE, ::ID_REC_SCALE]
+                        )
+                        self._id_check_thread = threading.Thread(
+                            target=self._run_identity_check,
+                            args=(frame_for_id,),
+                            daemon=True,
+                        )
+                        self._id_check_thread.start()
 
             # Periodic status line — always visible so you can see what's happening
             if log_now:
@@ -320,6 +306,40 @@ class FaceRecognitionNode(LifecycleNode):
 
         except Exception as e:
             self.get_logger().error(f"Image processing error: {e}")
+
+    def _run_identity_check(self, small: np.ndarray) -> None:
+        """Run face_recognition identity check in a background thread."""
+        try:
+            locs = face_recog_lib.face_locations(small)
+            prev = self._id_verified
+            if locs:
+                encs = face_recog_lib.face_encodings(small, locs)
+                if encs:
+                    matches = face_recog_lib.compare_faces(
+                        self._known_encodings, encs[0]
+                    )
+                    matched = [
+                        self._known_names[i] for i, m in enumerate(matches) if m
+                    ]
+                    self._id_verified = bool(matched)
+                    self._id_matched_name = matched[0] if matched else ""
+                else:
+                    self._id_verified = False
+                    self._id_matched_name = ""
+            else:
+                self._id_verified = False
+                self._id_matched_name = ""
+            if self._id_verified != prev:
+                if self._id_verified:
+                    self.get_logger().info(
+                        f"Identity verified: {self._id_matched_name}"
+                    )
+                else:
+                    self.get_logger().warn(
+                        "Identity lost: no registered face matched"
+                    )
+        except Exception as e:
+            self.get_logger().warn(f"Identity check failed: {e}")
 
     def _publish_detection(self, msg: Image, res: FaceLandmarkerResult) -> None:
         face_landmarks = res.face_landmarks[0]

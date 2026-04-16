@@ -46,6 +46,7 @@ ARM_ELBOW_UP = True                        # IK solution preference
 ARM_IK_KP_X = 0.005          # workspace inches per pixel error per update
 ARM_IK_KP_Y = -0.005         # negative: image Y axis is inverted vs workspace Y
 ARM_IK_MAX_JOINT_STEP = 0.05 # max joint angle change per update (rad)
+ARM_CONTROL_RATE_HZ = 30.0   # arm controller timer frequency
 
 # Arm tracking control defaults (legacy, kept for reference)
 ARM_TRACK_MAX_STEP_RAD = 0.08
