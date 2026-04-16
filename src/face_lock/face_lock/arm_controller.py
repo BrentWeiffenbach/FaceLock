@@ -12,16 +12,19 @@ from vision_msgs.msg import Detection2D
 
 from face_lock.constants import (
     ARM_TRACK_DEADBAND_PX,
-    ARM_TRACK_MAX_STEP_RAD,
+    ARM_TRACK_EMA_ALPHA,
+    ARM_TRACK_KP_LOWER_US_PX,
+    ARM_TRACK_KP_UPPER_US_PX,
+    ARM_TRACK_MAX_SLEW_US,
     ARM_TRACK_TIMEOUT_SEC,
     DEADLOCK_HOME_RAD,
     DEADLOCK_JOINT_NAME,
     LOWER_ARM_HOME_RAD,
     LOWER_ARM_JOINT_NAME,
-    LOWER_ARM_TRACK_GAIN,
+    SERVO_PULSE_MAX_US,
+    SERVO_PULSE_MIN_US,
     UPPER_ARM_HOME_RAD,
     UPPER_ARM_JOINT_NAME,
-    UPPER_ARM_TRACK_GAIN,
 )
 
 
@@ -37,31 +40,62 @@ class ArmController(LifecycleNode):
         self._active: bool = False
         self._last_joint_state: Optional[JointState] = None
         self._last_detection_time: float = 0.0
-        self._last_cmd_time: float = 0.0
 
-        self._lower_cmd_rad: float = LOWER_ARM_HOME_RAD
-        self._upper_cmd_rad: float = UPPER_ARM_HOME_RAD
+        # Control state in PWM microseconds
+        self._lower_pwm_us: int = self._rad_to_pwm(LOWER_ARM_HOME_RAD)
+        self._upper_pwm_us: int = self._rad_to_pwm(UPPER_ARM_HOME_RAD)
         self._deadlock_cmd_rad: float = DEADLOCK_HOME_RAD
+
+        # EMA filter state — initialised on first detection
+        self._x_filtered: Optional[float] = None
+        self._y_filtered: Optional[float] = None
 
         self.declare_parameter("image_width", 640.0)
         self.declare_parameter("image_height", 480.0)
-        self.declare_parameter("lower_gain", LOWER_ARM_TRACK_GAIN)
-        self.declare_parameter("upper_gain", UPPER_ARM_TRACK_GAIN)
+        self.declare_parameter("ema_alpha", ARM_TRACK_EMA_ALPHA)
+        self.declare_parameter("kp_lower_us_px", ARM_TRACK_KP_LOWER_US_PX)
+        self.declare_parameter("kp_upper_us_px", ARM_TRACK_KP_UPPER_US_PX)
+        self.declare_parameter("max_slew_us", float(ARM_TRACK_MAX_SLEW_US))
         self.declare_parameter("deadband_px", ARM_TRACK_DEADBAND_PX)
-        self.declare_parameter("max_step_rad", ARM_TRACK_MAX_STEP_RAD)
         self.declare_parameter("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
         self.declare_parameter("invert_lower", False)
         self.declare_parameter("invert_upper", True)
 
         self._image_width: float = 640.0
         self._image_height: float = 480.0
-        self._lower_gain: float = LOWER_ARM_TRACK_GAIN
-        self._upper_gain: float = UPPER_ARM_TRACK_GAIN
+        self._ema_alpha: float = ARM_TRACK_EMA_ALPHA
+        self._kp_lower: float = ARM_TRACK_KP_LOWER_US_PX
+        self._kp_upper: float = ARM_TRACK_KP_UPPER_US_PX
+        self._max_slew_us: float = float(ARM_TRACK_MAX_SLEW_US)
         self._deadband_px: float = ARM_TRACK_DEADBAND_PX
-        self._max_step_rad: float = ARM_TRACK_MAX_STEP_RAD
         self._track_timeout_sec: float = ARM_TRACK_TIMEOUT_SEC
         self._invert_lower: bool = False
         self._invert_upper: bool = True
+
+    # ------------------------------------------------------------------
+    # PWM / radian helpers (must match pi_hardware conversions)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _rad_to_pwm(rad: float) -> int:
+        """Map radians [0, π] → PWM [500, 2500] µs."""
+        clamped = max(0.0, min(math.pi, rad))
+        pulse = SERVO_PULSE_MIN_US + (clamped / math.pi) * (
+            SERVO_PULSE_MAX_US - SERVO_PULSE_MIN_US
+        )
+        return int(round(pulse))
+
+    @staticmethod
+    def _pwm_to_rad(pulse_us: int) -> float:
+        """Map PWM [500, 2500] µs → radians [0, π]."""
+        clamped = max(SERVO_PULSE_MIN_US, min(SERVO_PULSE_MAX_US, pulse_us))
+        return (clamped - SERVO_PULSE_MIN_US) / (
+            SERVO_PULSE_MAX_US - SERVO_PULSE_MIN_US
+        ) * math.pi
+
+    @staticmethod
+    def _clamp_pwm(pulse_us: float) -> int:
+        return int(round(max(SERVO_PULSE_MIN_US, min(SERVO_PULSE_MAX_US, pulse_us))))
 
     def _param_float(self, name: str, default: float) -> float:
         value = self.get_parameter(name).value
@@ -83,10 +117,13 @@ class ArmController(LifecycleNode):
         self.get_logger().info("Configuring arm controller")
         self._image_width = self._param_float("image_width", 640.0)
         self._image_height = self._param_float("image_height", 480.0)
-        self._lower_gain = self._param_float("lower_gain", LOWER_ARM_TRACK_GAIN)
-        self._upper_gain = self._param_float("upper_gain", UPPER_ARM_TRACK_GAIN)
+        self._ema_alpha = self._param_float("ema_alpha", ARM_TRACK_EMA_ALPHA)
+        self._kp_lower = self._param_float("kp_lower_us_px", ARM_TRACK_KP_LOWER_US_PX)
+        self._kp_upper = self._param_float("kp_upper_us_px", ARM_TRACK_KP_UPPER_US_PX)
+        self._max_slew_us = self._param_float(
+            "max_slew_us", float(ARM_TRACK_MAX_SLEW_US)
+        )
         self._deadband_px = self._param_float("deadband_px", ARM_TRACK_DEADBAND_PX)
-        self._max_step_rad = self._param_float("max_step_rad", ARM_TRACK_MAX_STEP_RAD)
         self._track_timeout_sec = self._param_float(
             "track_timeout_sec", ARM_TRACK_TIMEOUT_SEC
         )
@@ -120,7 +157,9 @@ class ArmController(LifecycleNode):
         self.get_logger().info("Activating arm controller")
         self._active = True
         self._last_detection_time = time.monotonic()
-        self._last_cmd_time = 0.0
+        # Reset EMA state so stale coordinates don't bias first update
+        self._x_filtered = None
+        self._y_filtered = None
         return super().on_activate(state)
 
     def on_deactivate(self, state: State) -> TransitionCallbackReturn:
@@ -141,12 +180,11 @@ class ArmController(LifecycleNode):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = [LOWER_ARM_JOINT_NAME, UPPER_ARM_JOINT_NAME, DEADLOCK_JOINT_NAME]
         msg.position = [
-            self._clamp_rad(self._lower_cmd_rad),
-            self._clamp_rad(self._upper_cmd_rad),
+            self._pwm_to_rad(self._lower_pwm_us),
+            self._pwm_to_rad(self._upper_pwm_us),
             self._clamp_rad(self._deadlock_cmd_rad),
         ]
         self.joint_pub.publish(msg)
-        self._last_cmd_time = time.monotonic()
 
     def joint_states_cb(self, msg: JointState) -> None:
         self._last_joint_state = msg
@@ -154,9 +192,9 @@ class ArmController(LifecycleNode):
             if idx >= len(msg.position):
                 break
             if name == LOWER_ARM_JOINT_NAME:
-                self._lower_cmd_rad = self._clamp_rad(msg.position[idx])
+                self._lower_pwm_us = self._rad_to_pwm(msg.position[idx])
             elif name == UPPER_ARM_JOINT_NAME:
-                self._upper_cmd_rad = self._clamp_rad(msg.position[idx])
+                self._upper_pwm_us = self._rad_to_pwm(msg.position[idx])
             elif name == DEADLOCK_JOINT_NAME:
                 self._deadlock_cmd_rad = self._clamp_rad(msg.position[idx])
 
@@ -166,51 +204,73 @@ class ArmController(LifecycleNode):
 
         cx = float(msg.bbox.center.position.x)
         cy = float(msg.bbox.center.position.y)
+
+        # ── Step 1: EMA low-pass filter ──────────────────────────────────
+        # x_filtered = α·x_new + (1−α)·x_old   (α = 0.2 → "heavy" target)
+        x_prev = self._x_filtered
+        y_prev = self._y_filtered
+        if x_prev is None or y_prev is None:
+            x_filt: float = cx
+            y_filt: float = cy
+        else:
+            x_filt = self._ema_alpha * cx + (1.0 - self._ema_alpha) * x_prev
+            y_filt = self._ema_alpha * cy + (1.0 - self._ema_alpha) * y_prev
+        self._x_filtered = x_filt
+        self._y_filtered = y_filt
+
+        # ── Step 2: pixel error relative to image centre ─────────────────
         image_cx = self._image_width / 2.0
         image_cy = self._image_height / 2.0
+        err_x = x_filt - image_cx   # +ve → face is right of centre
+        err_y = y_filt - image_cy   # +ve → face is below centre
 
-        err_x = cx - image_cx
-        err_y = cy - image_cy
-
+        # Deadband: ignore tiny errors caused by residual detection noise
         if abs(err_x) < self._deadband_px:
             err_x = 0.0
         if abs(err_y) < self._deadband_px:
             err_y = 0.0
 
-        norm_x = err_x / image_cx if image_cx > 0.0 else 0.0
-        norm_y = err_y / image_cy if image_cy > 0.0 else 0.0
-
-        lower_delta = self._lower_gain * norm_x
-        upper_delta = self._upper_gain * norm_y
-        lower_delta = max(-self._max_step_rad, min(self._max_step_rad, lower_delta))
-        upper_delta = max(-self._max_step_rad, min(self._max_step_rad, upper_delta))
-
+        # ── Step 3: P-controller → desired PWM delta (µs) ────────────────
+        # Joint 1 (Base):  higher PWM moves camera RIGHT
+        #   face on right (err_x > 0) → increase lower PWM
+        delta_lower = self._kp_lower * err_x
         if self._invert_lower:
-            lower_delta *= -1.0
-        if self._invert_upper:
-            upper_delta *= -1.0
+            delta_lower = -delta_lower
 
-        self._lower_cmd_rad = self._clamp_rad(self._lower_cmd_rad + lower_delta)
-        self._upper_cmd_rad = self._clamp_rad(self._upper_cmd_rad + upper_delta)
+        # Joint 2 (Elbow): higher PWM moves camera LEFT (direction inverted)
+        #   Default invert_upper=True flips the response so the elbow tracks Y
+        delta_upper = self._kp_upper * err_y
+        if self._invert_upper:
+            delta_upper = -delta_upper
+
+        # ── Step 4: slew-rate limiting ────────────────────────────────────
+        # Cap the maximum PWM change per update to suppress jerk
+        delta_lower = max(-self._max_slew_us, min(self._max_slew_us, delta_lower))
+        delta_upper = max(-self._max_slew_us, min(self._max_slew_us, delta_upper))
+
+        # ── Step 5: integrate and clamp to [500, 2500] µs ────────────────
+        self._lower_pwm_us = self._clamp_pwm(self._lower_pwm_us + delta_lower)
+        self._upper_pwm_us = self._clamp_pwm(self._upper_pwm_us + delta_upper)
+
         self._last_detection_time = time.monotonic()
         self._publish_joint_command()
 
     def _tracking_watchdog_cb(self) -> None:
         if not self._active:
             return
-
-        now = time.monotonic()
-        if now - self._last_detection_time > self._track_timeout_sec:
-            # When face is lost, hold current command; no auto-snap.
+        # Hold current PWM when face is lost (no auto-snap to home)
+        if time.monotonic() - self._last_detection_time > self._track_timeout_sec:
             return
 
     def reset_arm_cb(
         self, req: Trigger.Request, res: Trigger.Response
     ) -> Trigger.Response:
         del req
-        self._lower_cmd_rad = LOWER_ARM_HOME_RAD
-        self._upper_cmd_rad = UPPER_ARM_HOME_RAD
+        self._lower_pwm_us = self._rad_to_pwm(LOWER_ARM_HOME_RAD)
+        self._upper_pwm_us = self._rad_to_pwm(UPPER_ARM_HOME_RAD)
         self._deadlock_cmd_rad = DEADLOCK_HOME_RAD
+        self._x_filtered = None
+        self._y_filtered = None
         self._publish_joint_command()
         res.success = True
         res.message = "Arm reset command published"

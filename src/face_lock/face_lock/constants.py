@@ -1,5 +1,7 @@
 """Shared constants for the face_lock package."""
 
+import math
+
 IDENTITIES_DIR = "/workspaces/FaceLock/src/face_lock/data/identities"
 PASSWORDS_DIR = "/workspaces/FaceLock/src/face_lock/data/passwords"
 
@@ -26,12 +28,37 @@ LOWER_ARM_HOME_RAD = 1.57
 UPPER_ARM_HOME_RAD = 1.57
 DEADLOCK_HOME_RAD = 1.57
 
-# Arm tracking control defaults
+# Arm linkage lengths (inches)
+LINKAGE_1_LENGTH = 5.2   # base servo → elbow servo
+LINKAGE_2_LENGTH = 6.5   # elbow servo → camera lens
+
+# IK servo-to-joint angle mapping
+#   joint_angle = DIRECTION * (servo_rad - ZERO_OFFSET)
+#   servo_rad   = DIRECTION * joint_angle + ZERO_OFFSET
+# Tune these with test_arm.py until the arm moves correctly in XY.
+LOWER_ARM_IK_DIRECTION = 1
+LOWER_ARM_IK_ZERO_OFFSET = 0.0            # servo rad when q1 = 0 (link 1 horizontal right)
+UPPER_ARM_IK_DIRECTION = 1
+UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straight)
+ARM_ELBOW_UP = True                        # IK solution preference
+
+# Visual-servoing IK P-controller
+ARM_IK_KP_X = 0.005          # workspace inches per pixel error per update
+ARM_IK_KP_Y = -0.005         # negative: image Y axis is inverted vs workspace Y
+ARM_IK_MAX_JOINT_STEP = 0.05 # max joint angle change per update (rad)
+
+# Arm tracking control defaults (legacy, kept for reference)
 ARM_TRACK_MAX_STEP_RAD = 0.08
 ARM_TRACK_DEADBAND_PX = 15.0
 ARM_TRACK_TIMEOUT_SEC = 1.5
 LOWER_ARM_TRACK_GAIN = 0.55
 UPPER_ARM_TRACK_GAIN = 0.45
+
+# Visual-servoing controller parameters (PWM-space)
+ARM_TRACK_EMA_ALPHA = 0.2        # Low-pass filter coefficient (0 < α ≤ 1)
+ARM_TRACK_KP_LOWER_US_PX = 2.0  # P-gain for Joint 1 (Base)  [µs / px]
+ARM_TRACK_KP_UPPER_US_PX = 1.5  # P-gain for Joint 2 (Elbow) [µs / px]
+ARM_TRACK_MAX_SLEW_US = 20      # Max PWM change per update  [µs]
 
 # Deadlock servo positions
 DEADLOCK_LOCK_PULSE_US = SERVO_PULSE_MIN_US

@@ -3,7 +3,7 @@ import time
 import sys
 
 def main():
-    servo_pin = 23
+    servo_pin = 22
 
     # Connect to the local Pi's pigpio daemon
     pi = pigpio.pi()
@@ -24,12 +24,16 @@ def main():
     def set_angle(pulsewidth):
         print(f"Setting pulsewidth: {pulsewidth} µs")
         pi.set_servo_pulsewidth(servo_pin, pulsewidth)
-        time.sleep(1)
+        time.sleep(0.15)
 
     try:
-        print("Starting servo sweep test. Press Ctrl+C to quit.")
-        set_angle(500)   # ~0 degrees
-        # set_angle(2500)  # ~180 degrees
+        set_angle(1500)
+        # print("Starting servo sweep test. Press Ctrl+C to quit.")
+        # Sweep from 0 to max angle slowly
+        # for pw in range(500, 2501, 10):  # 500 to 2500 µs in steps of 10
+        #     set_angle(pw)
+        # print("Sweep complete. Holding at max angle for 2 seconds.")
+        # time.sleep(2)
 
     except KeyboardInterrupt:
         print("\nTest stopped by user.")
