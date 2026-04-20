@@ -43,7 +43,12 @@ UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straigh
 ARM_ELBOW_UP = True                        # IK solution preference
 
 # Visual-servoing IK P-controller
-ARM_IK_KP_X = 0.005          # workspace inches per pixel error per update
+# Sign convention: at home (arm pointing up, q1=90°) the camera also points
+# "up".  The camera's image +X maps to world −X (camera is rotated 90° CCW
+# from the world frame), so a face to the camera's RIGHT needs the arm to
+# swing toward −X (q1 > 90°) to bring it to centre.  Both gains are therefore
+# negative relative to the naive "same-sign" assumption.
+ARM_IK_KP_X = -0.005         # workspace inches per pixel error per update
 ARM_IK_KP_Y = -0.005         # negative: image Y axis is inverted vs workspace Y
 ARM_IK_MAX_JOINT_STEP = 0.04 # max joint angle change per update (rad); 0.04×50 Hz ≈ 2 rad/s
 ARM_CONTROL_RATE_HZ = 50.0   # arm controller timer frequency (Hz)
