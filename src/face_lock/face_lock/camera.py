@@ -1,3 +1,4 @@
+import math
 from typing import Any, Optional
 
 import cv2
@@ -5,7 +6,16 @@ import rclpy
 from cv_bridge import CvBridge
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.node import Publisher, Timer
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
+
+from face_lock.constants import (
+    LOWER_ARM_IK_DIRECTION,
+    LOWER_ARM_IK_ZERO_OFFSET,
+    LOWER_ARM_JOINT_NAME,
+    UPPER_ARM_IK_DIRECTION,
+    UPPER_ARM_IK_ZERO_OFFSET,
+    UPPER_ARM_JOINT_NAME,
+)
 
 
 class CameraNode(LifecycleNode):
@@ -28,11 +38,17 @@ class CameraNode(LifecycleNode):
         self.image_pub: Optional[Publisher] = None
         self.camera_index: int = 0
 
+        # Current servo angles for image derotation (default = home position)
+        self._s1_servo: float = math.pi / 2
+        self._s2_servo: float = math.pi / 2
+        self._rotation_offset_deg: float = 0.0
+
         # Declare parameters
         self.declare_parameter("camera_index", 0)
         self.declare_parameter("fps", 60.0)
         self.declare_parameter("width", 1920)
         self.declare_parameter("height", 1080)
+        self.declare_parameter("rotation_offset_deg", 0.0)
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info("Configuring camera")
@@ -50,11 +66,22 @@ class CameraNode(LifecycleNode):
         self.width = int(width_param) if width_param is not None else 1920
         self.height = int(height_param) if height_param is not None else 1080
 
+        rot_param: Any = self.get_parameter("rotation_offset_deg").value
+        self._rotation_offset_deg = float(rot_param) if rot_param is not None else 0.0
+
         # Create publisher
         self.image_pub = self.create_lifecycle_publisher(Image, "~/image_raw", 10)
 
+        # Subscribe to arm joint states so we can derotate the published image
+        # based on the camera's current physical orientation.
+        # Regular subscription (not lifecycle) so it persists across activations.
+        self.create_subscription(
+            JointState, "/arm/joint_states", self._joint_states_cb, 10
+        )
+
         self.get_logger().info(
-            f"Camera parameters set: {self.width}x{self.height} @ {self.fps} fps"
+            f"Camera parameters set: {self.width}x{self.height} @ {self.fps} fps, "
+            f"rotation_offset={self._rotation_offset_deg:.1f}°"
         )
         return TransitionCallbackReturn.SUCCESS
 
@@ -127,8 +154,18 @@ class CameraNode(LifecycleNode):
             self.cap = None
         return TransitionCallbackReturn.SUCCESS
 
+    def _joint_states_cb(self, msg: JointState) -> None:
+        """Track current servo angles so capture_and_publish can derotate the image."""
+        for idx, name in enumerate(msg.name):
+            if idx >= len(msg.position):
+                break
+            if name == LOWER_ARM_JOINT_NAME:
+                self._s1_servo = float(msg.position[idx])
+            elif name == UPPER_ARM_JOINT_NAME:
+                self._s2_servo = float(msg.position[idx])
+
     def capture_and_publish(self) -> None:
-        """Capture frame and publish image"""
+        """Capture frame, derotate based on arm orientation, and publish."""
         if self.cap is None:
             return
         ret: bool
@@ -137,6 +174,29 @@ class CameraNode(LifecycleNode):
         if not ret:
             self.get_logger().warn("Failed to capture frame")
             return
+
+        # ── Image derotation ─────────────────────────────────────────
+        # The camera is fixed to the tip of linkage-2, so it rotates with the
+        # arm.  We compute the camera's world-frame orientation from the
+        # current servo angles and rotate the image the opposite way so that
+        # "up" in the image always means "up" in the world.  This ensures
+        # MediaPipe face detection works at all arm angles, and that pixel
+        # errors fed to the arm controller have the correct world-frame sign.
+        #
+        # IK mapping (from constants):  q = DIRECTION * (servo - OFFSET)
+        #   q1 = s1  (LOWER: DIR=1, OFFSET=0)
+        #   q2 = s2 - π/2  (UPPER: DIR=1, OFFSET=π/2)
+        # Camera world angle = q1 + q2; at home (s1=s2=π/2): angle=π/2 → 0° correction.
+        q1_cam = LOWER_ARM_IK_DIRECTION * (self._s1_servo - LOWER_ARM_IK_ZERO_OFFSET)
+        q2_cam = UPPER_ARM_IK_DIRECTION * (self._s2_servo - UPPER_ARM_IK_ZERO_OFFSET)
+        correction_deg = (
+            -(q1_cam + q2_cam - math.pi / 2) * (180.0 / math.pi)
+            + self._rotation_offset_deg
+        )
+        if abs(correction_deg) > 0.5:
+            h_f, w_f = frame.shape[:2]
+            M = cv2.getRotationMatrix2D((w_f / 2.0, h_f / 2.0), correction_deg, 1.0)
+            frame = cv2.warpAffine(frame, M, (w_f, h_f))
 
         # Publish image
         try:

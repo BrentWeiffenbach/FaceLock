@@ -120,6 +120,7 @@ class ArmController(LifecycleNode):
         self._last_detection_time: float = 0.0
         self._x_filtered: Optional[float] = None
         self._y_filtered: Optional[float] = None
+        self._last_debug_log_time: float = 0.0
 
         # Parameters
         self.declare_parameter("image_width", 640.0)
@@ -281,6 +282,30 @@ class ArmController(LifecycleNode):
         err_x = self._x_filtered - self._image_width / 2.0
         err_y = self._y_filtered - self._image_height / 2.0
 
+        # ── debug logging (throttled to 1 Hz) ────────────────────────
+        now_dbg = time.monotonic()
+        if now_dbg - self._last_debug_log_time >= 1.0:
+            self._last_debug_log_time = now_dbg
+            dir_x = (
+                "RIGHT" if err_x > self._deadband_px
+                else "LEFT" if err_x < -self._deadband_px
+                else "CENTER-X"
+            )
+            dir_y = (
+                "DOWN" if err_y > self._deadband_px
+                else "UP" if err_y < -self._deadband_px
+                else "CENTER-Y"
+            )
+            s1_dbg, s2_dbg = _ik_to_servo(self._q1, self._q2)
+            cur_x_dbg, cur_y_dbg = _forward_kinematics(self._q1, self._q2)
+            self.get_logger().info(
+                f"[ARM] face={dir_x}/{dir_y}  "
+                f"err=({err_x:+.1f},{err_y:+.1f})px  "
+                f"EE=({cur_x_dbg:.2f}\",{cur_y_dbg:.2f}\")  "
+                f"q1={math.degrees(self._q1):.1f}\u00b0 q2={math.degrees(self._q2):.1f}\u00b0  "
+                f"s1={math.degrees(s1_dbg):.1f}\u00b0 s2={math.degrees(s2_dbg):.1f}\u00b0"
+            )
+
         if abs(err_x) < self._deadband_px:
             err_x = 0.0
         if abs(err_y) < self._deadband_px:
@@ -298,7 +323,10 @@ class ArmController(LifecycleNode):
 
         # ── IK for new target ────────────────────────────────────────
         result = _inverse_kinematics(cur_x + dx, cur_y + dy, self._elbow_up)
-        if result is None:
+        if result is None:            
+            self.get_logger().debug(
+                f"[ARM] IK unreachable target=({cur_x+dx:.2f}\",{cur_y+dy:.2f}\")"
+            )           
             return  # unreachable — hold position
 
         new_q1, new_q2 = result
@@ -313,6 +341,9 @@ class ArmController(LifecycleNode):
         # ── convert to servo angles and validate ─────────────────────
         s1, s2 = _ik_to_servo(new_q1, new_q2)
         if not (0.0 <= s1 <= math.pi and 0.0 <= s2 <= math.pi):
+            self.get_logger().debug(
+                f"[ARM] servo limit hit s1={math.degrees(s1):.1f}° s2={math.degrees(s2):.1f}°"
+            )
             return  # servo limits — hold position
 
         self._q1 = new_q1
