@@ -367,10 +367,24 @@ class ArmController(LifecycleNode):
 
         new_q1, new_q2 = result
 
-        # ── clamp joint-angle step ───────────────────────────────────
+        # ── proportional joint-step (preserves direction ratio) ──────
+        # Independent per-joint clamping is wrong near max extension:
+        # when q2 needs +20° and q1 needs -6°, both get clamped to ±ms
+        # (equal/opposite), keeping q1+q2 constant and causing the arm
+        # to sweep along a fixed elbow arc instead of converging.
+        # Proportional scaling gives the full ms budget to the largest
+        # change and scales the other joint down accordingly.
         ms = self._max_joint_step
-        dq1 = max(-ms, min(ms, new_q1 - self._q1))
-        dq2 = max(-ms, min(ms, new_q2 - self._q2))
+        needed_q1 = new_q1 - self._q1
+        needed_q2 = new_q2 - self._q2
+        max_needed = max(abs(needed_q1), abs(needed_q2))
+        if max_needed > ms:
+            scale = ms / max_needed
+            dq1 = needed_q1 * scale
+            dq2 = needed_q2 * scale
+        else:
+            dq1 = needed_q1
+            dq2 = needed_q2
         new_q1 = self._q1 + dq1
         new_q2 = self._q2 + dq2
 
