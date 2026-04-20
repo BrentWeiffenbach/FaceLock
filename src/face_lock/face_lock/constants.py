@@ -45,8 +45,8 @@ ARM_ELBOW_UP = True                        # IK solution preference
 # Visual-servoing IK P-controller
 ARM_IK_KP_X = 0.005          # workspace inches per pixel error per update
 ARM_IK_KP_Y = -0.005         # negative: image Y axis is inverted vs workspace Y
-ARM_IK_MAX_JOINT_STEP = 0.05 # max joint angle change per update (rad)
-ARM_CONTROL_RATE_HZ = 30.0   # arm controller timer frequency
+ARM_IK_MAX_JOINT_STEP = 0.04 # max joint angle change per update (rad); 0.04×50 Hz ≈ 2 rad/s
+ARM_CONTROL_RATE_HZ = 50.0   # arm controller timer frequency (Hz)
 
 # Arm tracking control defaults (legacy, kept for reference)
 ARM_TRACK_MAX_STEP_RAD = 0.08
@@ -56,7 +56,7 @@ LOWER_ARM_TRACK_GAIN = 0.55
 UPPER_ARM_TRACK_GAIN = 0.45
 
 # Visual-servoing controller parameters (PWM-space)
-ARM_TRACK_EMA_ALPHA = 0.2        # Low-pass filter coefficient (0 < α ≤ 1)
+ARM_TRACK_EMA_ALPHA = 0.3        # Low-pass filter coefficient (0 < α ≤ 1); 0.3@50 Hz ≈ 67 ms lag
 ARM_TRACK_KP_LOWER_US_PX = 2.0  # P-gain for Joint 1 (Base)  [µs / px]
 ARM_TRACK_KP_UPPER_US_PX = 1.5  # P-gain for Joint 2 (Elbow) [µs / px]
 ARM_TRACK_MAX_SLEW_US = 20      # Max PWM change per update  [µs]

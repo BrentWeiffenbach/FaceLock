@@ -203,11 +203,26 @@ class ArmController(LifecycleNode):
         self._last_detection_time = time.monotonic()
         self._x_filtered = None
         self._y_filtered = None
-        return super().on_activate(state)
+        # Activate lifecycle publishers first, then send home so the arm
+        # always starts from a known position when CHECKING begins.
+        result = super().on_activate(state)
+        self._q1, self._q2 = _servo_to_ik(LOWER_ARM_HOME_RAD, UPPER_ARM_HOME_RAD)
+        self._deadlock_rad = DEADLOCK_HOME_RAD
+        s1, s2 = _ik_to_servo(self._q1, self._q2)
+        self._publish_joint_command(s1, s2)
+        return result
 
     def on_deactivate(self, state: State) -> TransitionCallbackReturn:
-        self.get_logger().info("Deactivating arm controller")
+        self.get_logger().info("Deactivating arm controller — returning to home")
         self._active = False
+        # Send home BEFORE super() deactivates the lifecycle publisher so
+        # the arm always returns to its rest position (DISABLED / SETUP).
+        self._q1, self._q2 = _servo_to_ik(LOWER_ARM_HOME_RAD, UPPER_ARM_HOME_RAD)
+        self._deadlock_rad = DEADLOCK_HOME_RAD
+        self._x_filtered = None
+        self._y_filtered = None
+        s1, s2 = _ik_to_servo(self._q1, self._q2)
+        self._publish_joint_command(s1, s2)
         return super().on_deactivate(state)
 
     def on_cleanup(self, state: State) -> TransitionCallbackReturn:
