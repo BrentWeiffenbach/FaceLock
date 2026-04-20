@@ -46,6 +46,12 @@ from face_lock.constants import (
 
 # ── Kinematics helpers ──────────────────────────────────────────────────
 
+# Reachable workspace: annulus between REACH_MIN and REACH_MAX inches from origin.
+# A small margin keeps cos_q2 away from ±1 (avoids numerical singularity).
+_REACH_MAX = LINKAGE_1_LENGTH + LINKAGE_2_LENGTH          # 11.7"
+_REACH_MIN = abs(LINKAGE_1_LENGTH - LINKAGE_2_LENGTH)     # 1.3"
+_REACH_MARGIN = 0.05                                       # inches
+
 
 def _forward_kinematics(q1: float, q2: float) -> tuple:
     """FK: IK joint angles (q1, q2) → workspace (x, y) in inches."""
@@ -298,10 +304,11 @@ class ArmController(LifecycleNode):
             )
             s1_dbg, s2_dbg = _ik_to_servo(self._q1, self._q2)
             cur_x_dbg, cur_y_dbg = _forward_kinematics(self._q1, self._q2)
+            ee_dist_dbg = math.sqrt(cur_x_dbg ** 2 + cur_y_dbg ** 2)
             self.get_logger().info(
                 f"[ARM] face={dir_x}/{dir_y}  "
                 f"err=({err_x:+.1f},{err_y:+.1f})px  "
-                f"EE=({cur_x_dbg:.2f}\",{cur_y_dbg:.2f}\")  "
+                f"EE=({cur_x_dbg:.2f}\",{cur_y_dbg:.2f}\") dist={ee_dist_dbg:.2f}\"/{_REACH_MAX:.2f}\"  "
                 f"q1={math.degrees(self._q1):.1f}\u00b0 q2={math.degrees(self._q2):.1f}\u00b0  "
                 f"s1={math.degrees(s1_dbg):.1f}\u00b0 s2={math.degrees(s2_dbg):.1f}\u00b0"
             )
@@ -321,13 +328,42 @@ class ArmController(LifecycleNode):
         # ── current position via FK ──────────────────────────────────
         cur_x, cur_y = _forward_kinematics(self._q1, self._q2)
 
+        # ── Project target to reachable workspace ─────────────────────
+        # The home position points straight up at (0", 11.7") which is
+        # exactly max extension.  Any lateral dx makes dist > reach_max
+        # and IK returns None, freezing the arm for as long as the face
+        # stays near the vertical axis.  Instead, clamp the target
+        # radially onto the workspace boundary so the arm always rotates
+        # toward the face even from a fully-extended starting position.
+        tgt_x = cur_x + dx
+        tgt_y = cur_y + dy
+        tgt_dist = math.sqrt(tgt_x * tgt_x + tgt_y * tgt_y)
+        _clamped = False
+        if tgt_dist > _REACH_MAX - _REACH_MARGIN:
+            scale = (_REACH_MAX - _REACH_MARGIN) / tgt_dist
+            tgt_x, tgt_y = tgt_x * scale, tgt_y * scale
+            _clamped = True
+        elif 0.0 < tgt_dist < _REACH_MIN + _REACH_MARGIN:
+            scale = (_REACH_MIN + _REACH_MARGIN) / tgt_dist
+            tgt_x, tgt_y = tgt_x * scale, tgt_y * scale
+            _clamped = True
+        elif tgt_dist == 0.0:
+            # Degenerate: arm is at origin — move to inner boundary
+            tgt_x, tgt_y = _REACH_MIN + _REACH_MARGIN, 0.0
+            _clamped = True
+
         # ── IK for new target ────────────────────────────────────────
-        result = _inverse_kinematics(cur_x + dx, cur_y + dy, self._elbow_up)
-        if result is None:            
+        result = _inverse_kinematics(tgt_x, tgt_y, self._elbow_up)
+        if result is None:
             self.get_logger().debug(
-                f"[ARM] IK unreachable target=({cur_x+dx:.2f}\",{cur_y+dy:.2f}\")"
-            )           
-            return  # unreachable — hold position
+                f"[ARM] IK failed (post-clamp) tgt=({tgt_x:.2f}\",{tgt_y:.2f}\")"
+            )
+            return  # should not happen after clamping, but guard anyway
+        if _clamped:
+            self.get_logger().debug(
+                f"[ARM] target clamped to ({tgt_x:.2f}\",{tgt_y:.2f}\") "
+                f"(raw dist={tgt_dist:.2f}\")"
+            )
 
         new_q1, new_q2 = result
 
