@@ -43,12 +43,8 @@ UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straigh
 ARM_ELBOW_UP = True                        # IK solution preference
 
 # Visual-servoing IK P-controller
-# Sign convention: image derotation (camera.py) aligns image-right = world-right.
-# A face to the RIGHT (err_x > 0) needs the arm to move in +x, so kp_x is positive.
-# A face BELOW centre (err_y > 0) needs the camera lowered, so kp_y is negative
-# because image +Y is downward while workspace +Y is upward.
-ARM_IK_KP_X = 0.005          # workspace inches per pixel error per update
-ARM_IK_KP_Y = -0.005         # negative: image Y down vs workspace Y up
+ARM_IK_KP_X = -0.005        
+ARM_IK_KP_Y = 0.005     
 ARM_IK_MAX_JOINT_STEP = 0.04 # max joint angle change per update (rad); 0.04×50 Hz ≈ 2 rad/s
 ARM_CONTROL_RATE_HZ = 50.0   # arm controller timer frequency (Hz)
 
