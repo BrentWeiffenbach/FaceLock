@@ -29,6 +29,7 @@ from face_lock.constants import (
     ARM_IK_KP_Y,
     ARM_IK_MAX_JOINT_STEP,
     ARM_IK_MAX_WORKSPACE_STEP,
+    ARM_IK_TIP_ANGLE_LIMIT_DEG,
     ARM_TRACK_DEADBAND_PX,
     ARM_TRACK_EMA_ALPHA,
     ARM_TRACK_EMA_TAU_SEC,
@@ -146,6 +147,7 @@ class ArmController(LifecycleNode):
         self.declare_parameter("control_rate_hz", ARM_CONTROL_RATE_HZ)
         self.declare_parameter("max_workspace_step", ARM_IK_MAX_WORKSPACE_STEP)
         self.declare_parameter("boundary_pull_in", ARM_IK_BOUNDARY_PULL_IN)
+        self.declare_parameter("tip_angle_limit_deg", ARM_IK_TIP_ANGLE_LIMIT_DEG)
         self.declare_parameter("outlier_reject_px", ARM_TRACK_OUTLIER_REJECT_PX)
         self.declare_parameter("control_on_detection", True)
 
@@ -189,6 +191,8 @@ class ArmController(LifecycleNode):
             "max_workspace_step", ARM_IK_MAX_WORKSPACE_STEP
         )
         self._boundary_pull_in = self._pf("boundary_pull_in", ARM_IK_BOUNDARY_PULL_IN)
+        tip_limit_deg = self._pf("tip_angle_limit_deg", ARM_IK_TIP_ANGLE_LIMIT_DEG)
+        self._tip_angle_limit = math.radians(max(0.0, tip_limit_deg))
         self._outlier_reject_px = self._pf(
             "outlier_reject_px", ARM_TRACK_OUTLIER_REJECT_PX
         )
@@ -434,6 +438,14 @@ class ArmController(LifecycleNode):
             dq2 = needed_q2
         new_q1 = self._q1 + dq1
         new_q2 = self._q2 + dq2
+
+        # Hard safety clamp: keep linkage-2 tip angle (q1+q2) within +/- limit
+        # so the camera cannot flip beyond the allowed view cone.
+        tip_angle = new_q1 + new_q2
+        if tip_angle > self._tip_angle_limit:
+            new_q2 = self._tip_angle_limit - new_q1
+        elif tip_angle < -self._tip_angle_limit:
+            new_q2 = -self._tip_angle_limit - new_q1
 
         # ── convert to servo angles and validate ─────────────────────
         s1, s2 = _ik_to_servo(new_q1, new_q2)

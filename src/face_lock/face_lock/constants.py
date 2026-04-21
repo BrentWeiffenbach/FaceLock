@@ -53,6 +53,7 @@ ARM_IK_MAX_WORKSPACE_STEP = 1.5  # max workspace move per control tick (inches);
                                   # caps large jumps from false/stale detections
 ARM_IK_BOUNDARY_PULL_IN = 0.35  # inches pulled inward from max reach during tracking;
                                  # avoids q2 freezing near full extension
+ARM_IK_TIP_ANGLE_LIMIT_DEG = 90.0  # hard safety clamp for linkage-2 tip angle (q1+q2)
 ARM_TRACK_OUTLIER_REJECT_PX = 200.0  # reject detections > this many px from EMA
 
 # Arm tracking control defaults (legacy, kept for reference)
