@@ -43,10 +43,12 @@ UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straigh
 ARM_ELBOW_UP = True                        # IK solution preference
 
 # Visual-servoing IK P-controller
-# Gains: kp_x negative confirmed working (no image derotation).
-# At max error (320 px), step = 0.96" — within max_joint_step clamp.
-ARM_IK_KP_X = 0.001
-ARM_IK_KP_Y = -0.001
+# Gains: kp_x NEGATIVE, kp_y POSITIVE — confirmed in commit b39fe702.
+# Face RIGHT (positive err_x) → arm moves right (negative workspace x for this mount).
+# Face DOWN  (positive err_y) → arm tilts down  (positive workspace y).
+# At max error (320 px), step = 0.32" — within max_joint_step clamp.
+ARM_IK_KP_X = -0.001
+ARM_IK_KP_Y = 0.001
 ARM_IK_MAX_JOINT_STEP = 0.2618 # max joint angle change per update (rad); 15°
 ARM_IK_MAX_JOINT_VEL = 0.4  # hard per-joint speed cap (rad/s)
 ARM_CONTROL_RATE_HZ = 20.0   # arm controller timer frequency (Hz)
