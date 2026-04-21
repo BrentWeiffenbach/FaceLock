@@ -50,13 +50,13 @@ ARM_CONTROL_RATE_HZ = 50.0   # arm controller timer frequency (Hz)
 
 # Arm tracking control defaults (legacy, kept for reference)
 ARM_TRACK_MAX_STEP_RAD = 0.08
-ARM_TRACK_DEADBAND_PX = 15.0
+ARM_TRACK_DEADBAND_PX = 30.0  # px: larger deadband reduces jitter around centre
 ARM_TRACK_TIMEOUT_SEC = 1.5
 LOWER_ARM_TRACK_GAIN = 0.55
 UPPER_ARM_TRACK_GAIN = 0.45
 
 # Visual-servoing controller parameters (PWM-space)
-ARM_TRACK_EMA_ALPHA = 0.3        # Low-pass filter coefficient (0 < α ≤ 1); 0.3@50 Hz ≈ 67 ms lag
+ARM_TRACK_EMA_ALPHA = 0.15       # Lower alpha = heavier smoothing = less jitter
 ARM_TRACK_KP_LOWER_US_PX = 2.0  # P-gain for Joint 1 (Base)  [µs / px]
 ARM_TRACK_KP_UPPER_US_PX = 1.5  # P-gain for Joint 2 (Elbow) [µs / px]
 ARM_TRACK_MAX_SLEW_US = 20      # Max PWM change per update  [µs]

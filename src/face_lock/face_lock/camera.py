@@ -165,7 +165,7 @@ class CameraNode(LifecycleNode):
                 self._s2_servo = float(msg.position[idx])
 
     def capture_and_publish(self) -> None:
-        """Capture frame, derotate based on arm orientation, and publish."""
+        """Capture frame and publish."""
         if self.cap is None:
             return
         ret: bool
@@ -174,36 +174,6 @@ class CameraNode(LifecycleNode):
         if not ret:
             self.get_logger().warn("Failed to capture frame")
             return
-
-        # ── Image derotation ─────────────────────────────────────────
-        # The camera is fixed to the tip of linkage-2, so it rolls (rotates
-        # around its optical axis = world +Z) as the arm sweeps.  We compute
-        # the camera's world-frame "up" direction and rotate the image the
-        # opposite way so that image-up always means world-up.
-        #
-        # Physical frame geometry (per hardware description):
-        #   Base servo:  rotation axis = +Z_world
-        #   Elbow servo: flipped 180° around X from base → rotation axis = -Z_world
-        #
-        # Camera-up world angle = q1 + q2_base + q2_elbow
-        #   q2_base = (q1 - q1_home) contributes +1 per radian of q1
-        #   q2_elbow: elbow rotates around -Z, so it contributes -1 per radian of q2
-        #
-        # camera_up_angle_from_+X = q1 - q2
-        # Correction = -(camera_up_angle - home_angle) = -(q1 - q2 - π/2)
-        # BUT: when camera rolled CCW by φ, content appears CW; correct by applying -φ.
-        # correction_deg = (q1 - q2 - π/2) × (180/π)
-        # Verified: home→0°, arm-right→-90°(CW), arm-left→+90°(CCW) ✓
-        q1_cam = LOWER_ARM_IK_DIRECTION * (self._s1_servo - LOWER_ARM_IK_ZERO_OFFSET)
-        q2_cam = UPPER_ARM_IK_DIRECTION * (self._s2_servo - UPPER_ARM_IK_ZERO_OFFSET)
-        correction_deg = (
-            (q1_cam - q2_cam - math.pi / 2) * (180.0 / math.pi)
-            + self._rotation_offset_deg
-        )
-        if abs(correction_deg) > 0.5:
-            h_f, w_f = frame.shape[:2]
-            M = cv2.getRotationMatrix2D((w_f / 2.0, h_f / 2.0), correction_deg, 1.0)
-            frame = cv2.warpAffine(frame, M, (w_f, h_f))
 
         # Publish image
         try:

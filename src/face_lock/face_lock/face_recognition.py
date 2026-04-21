@@ -141,6 +141,13 @@ class FaceRecognitionNode(LifecycleNode):
         pw_count = self._load_all_passwords()
         if pw_count:
             self.get_logger().info(f"Loaded {pw_count} password(s)")
+            for i, (name, pw) in enumerate(
+                zip(self._list_npy(PASSWORDS_DIR), self._all_passwords)
+            ):
+                steps_str = " -> ".join(
+                    f"[{', '.join(sorted(step))}]" for step in pw
+                )
+                self.get_logger().info(f"  Password '{name}': {steps_str}")
         else:
             self.get_logger().warn("No saved passwords found")
 
