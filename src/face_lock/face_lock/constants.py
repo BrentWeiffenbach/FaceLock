@@ -43,8 +43,8 @@ UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straigh
 ARM_ELBOW_UP = True                        # IK solution preference
 
 # Visual-servoing IK P-controller
-ARM_IK_KP_X = -0.005        
-ARM_IK_KP_Y = 0.005     
+ARM_IK_KP_X = -0.0005        
+ARM_IK_KP_Y = 0.0005     
 ARM_IK_MAX_JOINT_STEP = 0.04 # max joint angle change per update (rad); 0.04×50 Hz ≈ 2 rad/s
 ARM_CONTROL_RATE_HZ = 50.0   # arm controller timer frequency (Hz)
 
