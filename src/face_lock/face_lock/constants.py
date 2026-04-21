@@ -45,8 +45,8 @@ ARM_ELBOW_UP = True                        # IK solution preference
 # Visual-servoing IK P-controller
 # Gains: kp_x negative confirmed working (no image derotation).
 # At max error (320 px), step = 0.96" — within max_joint_step clamp.
-ARM_IK_KP_X = -0.003
-ARM_IK_KP_Y = 0.003
+ARM_IK_KP_X = -0.004
+ARM_IK_KP_Y = 0.004
 ARM_IK_MAX_JOINT_STEP = 0.04 # max joint angle change per update (rad); 0.04×50 Hz ≈ 2 rad/s
 ARM_CONTROL_RATE_HZ = 50.0   # arm controller timer frequency (Hz)
 
