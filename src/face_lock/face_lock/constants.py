@@ -43,9 +43,11 @@ UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straigh
 ARM_ELBOW_UP = True                        # IK solution preference
 
 # Visual-servoing IK P-controller
-# Single gain (positive); pixel-to-workspace direction comes from
-# rotating the pixel error by the camera tip angle (q1+q2).
-ARM_IK_KP = 0.002             # px → inches gain (positive; rotation handles direction)
+# Camera stays level (q1+q2 = π/2) so image axes are world-aligned.
+# kp_x NEGATIVE: face-right (pos err_x) → negative dx → q1 decreases → arm pans right.
+# kp_y POSITIVE: face-down  (pos err_y) → positive dy → raise target y.
+ARM_IK_KP_X = -0.002
+ARM_IK_KP_Y = 0.002
 ARM_IK_MAX_JOINT_STEP = 0.2618 # max joint angle change per update (rad); 15°
 ARM_IK_MAX_JOINT_VEL = 0.8  # hard per-joint speed cap (rad/s)
 ARM_CONTROL_RATE_HZ = 20.0   # arm controller timer frequency (Hz)

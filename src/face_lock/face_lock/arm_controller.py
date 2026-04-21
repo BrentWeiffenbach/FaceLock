@@ -26,7 +26,8 @@ from face_lock.constants import (
     ARM_CONTROL_RATE_HZ,
     ARM_ELBOW_UP,
     ARM_IK_BOUNDARY_PULL_IN,
-    ARM_IK_KP,
+    ARM_IK_KP_X,
+    ARM_IK_KP_Y,
     ARM_IK_MAX_JOINT_VEL,
     ARM_IK_MAX_JOINT_STEP,
     ARM_IK_MAX_WORKSPACE_STEP,
@@ -143,7 +144,8 @@ class ArmController(LifecycleNode):
         self.declare_parameter("image_height", 480.0)
         self.declare_parameter("ema_alpha", ARM_TRACK_EMA_ALPHA)
         self.declare_parameter("ema_tau_sec", ARM_TRACK_EMA_TAU_SEC)
-        self.declare_parameter("kp", ARM_IK_KP)
+        self.declare_parameter("kp_x", ARM_IK_KP_X)
+        self.declare_parameter("kp_y", ARM_IK_KP_Y)
         self.declare_parameter("max_joint_step", ARM_IK_MAX_JOINT_STEP)
         self.declare_parameter("max_joint_vel", ARM_IK_MAX_JOINT_VEL)
         self.declare_parameter("deadband_px", ARM_TRACK_DEADBAND_PX)
@@ -187,7 +189,8 @@ class ArmController(LifecycleNode):
         self._image_height = self._pf("image_height", 480.0)
         self._ema_alpha = self._pf("ema_alpha", ARM_TRACK_EMA_ALPHA)
         self._ema_tau = self._pf("ema_tau_sec", ARM_TRACK_EMA_TAU_SEC)
-        self._kp = self._pf("kp", ARM_IK_KP)
+        self._kp_x = self._pf("kp_x", ARM_IK_KP_X)
+        self._kp_y = self._pf("kp_y", ARM_IK_KP_Y)
         self._max_joint_step = self._pf("max_joint_step", ARM_IK_MAX_JOINT_STEP)
         self._max_joint_vel = self._pf("max_joint_vel", ARM_IK_MAX_JOINT_VEL)
         self._deadband_px = self._pf("deadband_px", ARM_TRACK_DEADBAND_PX)
@@ -405,15 +408,10 @@ class ArmController(LifecycleNode):
             return
 
         # ── workspace delta (inches) ─────────────────────────────────
-        # Eye-in-hand rotation: the camera rotates with the arm tip.
-        # Image +u (right) maps to camera-right = (sin θ, -cos θ) in workspace.
-        # Image +v (down)  maps to camera-down  = (-cos θ, -sin θ) in workspace.
-        # θ = q1 + q2 is the tip orientation measured from horizontal.
-        tip = self._q1 + self._q2
-        sin_tip = math.sin(tip)
-        cos_tip = math.cos(tip)
-        dx = self._kp * ( err_x * sin_tip - err_y * cos_tip)
-        dy = self._kp * (-err_x * cos_tip - err_y * sin_tip)
+        # Camera is kept level (q1+q2 = π/2) so image axes stay
+        # aligned with the world frame at all arm configurations.
+        dx = self._kp_x * err_x
+        dy = self._kp_y * err_y
         workspace_step = math.hypot(dx, dy)
         if workspace_step > self._max_workspace_step:
             scale = self._max_workspace_step / workspace_step
@@ -502,7 +500,12 @@ class ArmController(LifecycleNode):
             dq1 = needed_q1
             dq2 = needed_q2
         new_q1 = self._q1 + dq1
-        new_q2 = self._q2 + dq2
+
+        # ── camera levelling: keep tip angle at π/2 ──────────────────
+        # Counter-rotate servo 2 so the camera always faces the same
+        # direction regardless of q1.  This eliminates the eye-in-hand
+        # rotation problem and makes simple kp_x/kp_y gains stable.
+        new_q2 = (math.pi / 2.0) - new_q1
 
         # ── convert to servo angles and validate ─────────────────────
         s1, s2 = _ik_to_servo(new_q1, new_q2)
