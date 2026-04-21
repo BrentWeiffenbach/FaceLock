@@ -15,6 +15,8 @@ RUN groupadd --gid $USER_GID $USERNAME \
 
 # Install all your system dependencies
 RUN apt-get update && apt-get install -y \
+    openssh-client \
+    git \
     python3-pip \
     v4l-utils \
     ros-humble-vision-opencv \
@@ -40,6 +42,9 @@ RUN apt-get update && apt-get install -y x11-apps && rm -rf /var/lib/apt/lists/*
 
 # Set permissions for SSH key usage
 RUN chmod 700 /root/.ssh && chmod 600 /root/.ssh/* || true
+
+# Configure Git to trust the workspace directory
+RUN git config --global --add safe.directory /workspaces/FaceLock
 
 # Add bashrc aliases and ROS2 sourcing for root
 RUN echo "\n# Custom FaceLock Aliases and ROS2 setup" >> /root/.bashrc \

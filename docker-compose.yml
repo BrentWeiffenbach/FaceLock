@@ -6,6 +6,7 @@ services:
       dockerfile: .devcontainer/Dockerfile
     privileged: true
     network_mode: host
+    pids_limit: -1
     environment:
       - DISPLAY=$DISPLAY
       - QT_X11_NO_MITSHM=1
