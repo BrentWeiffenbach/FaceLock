@@ -167,7 +167,7 @@ class ArmController(LifecycleNode):
             Detection2D, "/face_recognition/detection", self._detection_cb, 10
         )
         self.image_sub = self.create_subscription(
-            Image, "/camera/image_raw", self._image_cb, 1
+            Image, "/face_recognition/debug_landmarks", self._image_cb, 1
         )
         self.reset_arm_srv = self.create_service(
             Trigger, "reset_arm", self._reset_arm_cb
@@ -227,7 +227,7 @@ class ArmController(LifecycleNode):
                 self._deadlock_rad = self._clamp_servo(msg.position[idx])
 
     def _detection_cb(self, msg: Detection2D) -> None:
-        """EMA-filter the face detection centre."""
+        """EMA-filter the face detection centre and save debug image."""
         if not self._active:
             return
 
@@ -243,6 +243,10 @@ class ArmController(LifecycleNode):
             self._y_filtered = a * cy + (1.0 - a) * self._y_filtered
 
         self._last_detection_time = time.monotonic()
+
+        # Save debug image on every detection (synced with face_recognition)
+        error_x = self._x_filtered - self._image_width / 2.0
+        self._save_debug_image(error_x, cx, cy)
 
     def _control_loop(self) -> None:
         """P-control: horizontal pixel error → θ1 adjustment."""
@@ -296,15 +300,14 @@ class ArmController(LifecycleNode):
             self._limit_min, min(self._limit_max, self._theta1 + step)
         )
         self._publish_joint_command()
-        self._maybe_save_debug_image(error_x)
 
     # ── debug image saving ────────────────────────────────────────
 
-    def _maybe_save_debug_image(self, error_x: float) -> None:
-        """Save annotated frame every 5 control commands."""
+    def _save_debug_image(
+        self, error_x: float, raw_cx: float, raw_cy: float
+    ) -> None:
+        """Save annotated frame on each detection (synced with face_recognition)."""
         self._command_count += 1
-        if self._command_count % 5 != 0:
-            return
         if self._latest_frame is None:
             return
         if self._x_filtered is None or self._y_filtered is None:
@@ -316,6 +319,8 @@ class ArmController(LifecycleNode):
         cy_img = int(h / 2)
         fx = int(self._x_filtered)
         fy = int(self._y_filtered)
+        rx = int(raw_cx)
+        ry = int(raw_cy)
 
         # Green crosshair at image centre
         cv2.drawMarker(frame, (cx_img, cy_img), (0, 255, 0),
@@ -323,18 +328,23 @@ class ArmController(LifecycleNode):
         cv2.putText(frame, "IMG_CENTER", (cx_img + 5, cy_img - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-        # Red dot at filtered face detection
+        # Blue dot at RAW (unfiltered) detection from this frame
+        cv2.circle(frame, (rx, ry), 10, (255, 100, 0), -1)
+        cv2.putText(frame, f"RAW ({rx},{ry})", (rx + 12, ry + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 100, 0), 1)
+
+        # Red dot at EMA-filtered face detection
         cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
-        cv2.putText(frame, f"FACE ({fx},{fy})", (fx + 10, fy - 10),
+        cv2.putText(frame, f"EMA ({fx},{fy})", (fx + 10, fy - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-        # Orange line between them
+        # Orange line from image centre to EMA position (the actual error)
         cv2.line(frame, (cx_img, cy_img), (fx, fy), (0, 165, 255), 2)
 
         # Info text
         info = (f"err_x={error_x:+.1f}px  "
                 f"theta1={math.degrees(self._theta1):.1f}deg  "
-                f"cmd#{self._command_count}")
+                f"det#{self._command_count}")
         cv2.putText(frame, info, (10, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
