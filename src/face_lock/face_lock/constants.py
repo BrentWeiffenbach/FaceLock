@@ -23,58 +23,50 @@ LOWER_ARM_JOINT_NAME = "lower_arm_joint"
 UPPER_ARM_JOINT_NAME = "upper_arm_joint"
 DEADLOCK_JOINT_NAME = "deadlock_joint"
 
-# Servo home angles (radians)
-LOWER_ARM_HOME_RAD = 1.57
-UPPER_ARM_HOME_RAD = 1.57
-DEADLOCK_HOME_RAD = 1.57
+# Servo home angles (radians) — centre of [0, π] servo range.
+# Attach servo horns so that π/2 (1500 µs) is the centre of the
+# reachable workspace.  At home both links point straight up.
+LOWER_ARM_HOME_RAD = math.pi / 2
+UPPER_ARM_HOME_RAD = math.pi / 2
+DEADLOCK_HOME_RAD = math.pi / 2
 
 # Arm linkage lengths (inches)
 LINKAGE_1_LENGTH = 5.2   # base servo → elbow servo
 LINKAGE_2_LENGTH = 6.5   # elbow servo → camera lens
 
-# IK servo-to-joint angle mapping
-#   joint_angle = DIRECTION * (servo_rad - ZERO_OFFSET)
-#   servo_rad   = DIRECTION * joint_angle + ZERO_OFFSET
-# Tune these with test_arm.py until the arm moves correctly in XY.
-LOWER_ARM_IK_DIRECTION = 1
-LOWER_ARM_IK_ZERO_OFFSET = 0.0            # servo rad when q1 = 0 (link 1 horizontal right)
-UPPER_ARM_IK_DIRECTION = 1
-UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straight)
-ARM_ELBOW_UP = True                        # IK solution preference
+# ── 2-DOF planar arm DH convention ──────────────────────────────────
+#
+#   Joint 1 (base):  Z out of servo rotation, X along link 1
+#   Joint 2 (elbow): Z inverted (180° Y rotation), X along link 2
+#   Camera:          fixed normal to link 2, faces along joint-1 Z
+#
+# Forward kinematics:
+#   elbow_x = L1 · cos(θ1)
+#   elbow_y = L1 · sin(θ1)
+#   camera_x = elbow_x + L2 · cos(θ1 − θ2)
+#   camera_y = elbow_y + L2 · sin(θ1 − θ2)
+#
+# Camera-leveling constraint (link 2 always vertical → camera level):
+#   θ1 − θ2 = π/2   ⟹   θ2 = θ1 − π/2
+#
+# With leveling applied the camera traces a circle of radius L1:
+#   camera_x = L1 · cos(θ1)
+#   camera_y = L1 · sin(θ1) + L2
+#
+# Joint ↔ servo mapping:
+#   servo1 = θ1                (direct — 0 rad = link 1 horizontal right)
+#   servo2 = θ2 + π/2         (offset — servo centre = elbow straight)
+# With leveling: servo2 = (θ1 − π/2) + π/2 = θ1  (mirrors servo1)
+# ─────────────────────────────────────────────────────────────────────
 
-# Visual-servoing IK P-controller
-# Camera stays level (q1+q2 = π/2) so image axes are world-aligned.
-# kp_x NEGATIVE: face-right (pos err_x) → negative dx → q1 decreases → arm pans right.
-# kp_y POSITIVE: face-down  (pos err_y) → positive dy → raise target y.
-ARM_IK_KP_X = -0.002
-ARM_IK_KP_Y = 0.002
-ARM_IK_MAX_JOINT_STEP = 0.2618 # max joint angle change per update (rad); 15°
-ARM_IK_MAX_JOINT_VEL = 0.8  # hard per-joint speed cap (rad/s)
-ARM_CONTROL_RATE_HZ = 20.0   # arm controller timer frequency (Hz)
-ARM_IK_MAX_WORKSPACE_STEP = 1.5  # max workspace move per control tick (inches);
-                                  # caps large jumps from false/stale detections
-ARM_IK_BOUNDARY_PULL_IN = 0.05  # inches pulled inward from max reach during tracking;
-                                 # small value: just enough to avoid singularity
-ARM_IK_TIP_ANGLE_LIMIT_DEG = 85.0  # hard safety clamp for linkage-2 tip angle (q1+q2)
-ARM_TRACK_OUTLIER_REJECT_PX = 200.0  # reject detections > this many px from EMA
-ARM_TRACK_REACQUIRE_RAMP_SEC = 0.6  # seconds to ramp from soft-start to full step
-ARM_IK_ACQUIRE_STEP_SCALE = 0.2  # fraction of max_joint_step used right after reacquire
-
-# Arm tracking control defaults (legacy, kept for reference)
-ARM_TRACK_MAX_STEP_RAD = 0.08
-ARM_TRACK_DEADBAND_PX = 30.0  # px: larger deadband reduces jitter around centre
-ARM_TRACK_TIMEOUT_SEC = 1.5
-LOWER_ARM_TRACK_GAIN = 0.55
-UPPER_ARM_TRACK_GAIN = 0.45
-
-# Visual-servoing controller parameters (PWM-space)
-ARM_TRACK_EMA_ALPHA = 0.15       # Lower alpha = heavier smoothing = less jitter
-ARM_TRACK_EMA_TAU_SEC = 0.4     # Time constant for time-based EMA (seconds).
-                                 # At 1 Hz detection: alpha ≈ 1-e^(-1/0.4) ≈ 0.92
-                                 # (near-instant snap). At 30 Hz: alpha ≈ 0.033 (smooth).
-ARM_TRACK_KP_LOWER_US_PX = 2.0  # P-gain for Joint 1 (Base)  [µs / px]
-ARM_TRACK_KP_UPPER_US_PX = 1.5  # P-gain for Joint 2 (Elbow) [µs / px]
-ARM_TRACK_MAX_SLEW_US = 20      # Max PWM change per update  [µs]
+# Visual-servoing P-controller
+ARM_KP = 0.005                                # proportional gain (rad / px)
+ARM_DEADBAND_PX = 5.0                         # pixels from image centre to ignore
+ARM_SERVO_LIMIT_MIN_RAD = math.radians(10)    # right-side servo limit (10°)
+ARM_SERVO_LIMIT_MAX_RAD = math.radians(170)   # left-side servo limit (170°)
+ARM_CONTROL_RATE_HZ = 20.0                    # control loop frequency (Hz)
+ARM_TRACK_TIMEOUT_SEC = 1.5                   # seconds before "face lost"
+ARM_TRACK_EMA_ALPHA = 0.15                    # EMA smoothing for detection pos
 
 # Deadlock servo positions
 DEADLOCK_LOCK_PULSE_US = SERVO_PULSE_MIN_US

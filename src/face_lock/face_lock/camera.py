@@ -9,11 +9,7 @@ from rclpy.node import Publisher, Timer
 from sensor_msgs.msg import Image, JointState
 
 from face_lock.constants import (
-    LOWER_ARM_IK_DIRECTION,
-    LOWER_ARM_IK_ZERO_OFFSET,
     LOWER_ARM_JOINT_NAME,
-    UPPER_ARM_IK_DIRECTION,
-    UPPER_ARM_IK_ZERO_OFFSET,
     UPPER_ARM_JOINT_NAME,
 )
 

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2-DOF Leveling IK & Visual Servoing (Front View)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; color: #f8fafc; font-family: sans-serif; }
+        canvas { display: block; width: 100%; height: 100vh; }
+        #ui-panel { position: absolute; top: 20px; left: 20px; background: rgba(30, 41, 59, 0.95); padding: 20px; border-radius: 12px; border: 1px solid #475569; width: 340px; box-shadow: 0 10px 25px rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
+        .slider-row { margin-bottom: 12px; }
+        .slider-row label { display: flex; justify-content: space-between; font-size: 0.875rem; margin-bottom: 4px; color: #cbd5e1; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: #3b82f6; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <h2 class="text-xl font-bold mb-4 text-white">Front-Facing Visual Servoing</h2>
+        
+        <div class="slider-row">
+            <label><span>Link 1 Length (L1)</span> <span id="l1-val">200</span></label>
+            <input type="range" id="l1-slider" min="50" max="350" value="200">
+        </div>
+        <div class="slider-row">
+            <label><span>Link 2 Length (L2)</span> <span id="l2-val">120</span></label>
+            <input type="range" id="l2-slider" min="50" max="250" value="120">
+        </div>
+        
+        <hr class="my-4 border-slate-600">
+
+        <div class="slider-row">
+            <label><span>Proportional Gain (Kp)</span> <span id="kp-val">0.005</span></label>
+            <input type="range" id="kp-slider" min="0.0001" max="0.02" step="0.0001" value="0.005">
+        </div>
+        <div class="slider-row">
+            <label><span>Deadband (pixels)</span> <span id="deadband-val">5</span></label>
+            <input type="range" id="deadband-slider" min="0" max="50" step="1" value="5">
+        </div>
+
+        <hr class="my-4 border-slate-600">
+        
+        <div class="text-sm text-slate-300 mt-2">
+            <p class="mb-2"><strong>Base Servo (θ1):</strong> <span id="t1-out" class="text-blue-400 font-mono">0.0°</span></p>
+            <p class="mb-2"><strong>Elbow Servo (θ2):</strong> <span id="t2-out" class="text-emerald-400 font-mono">0.0°</span></p>
+            <p class="text-xs text-slate-400 mt-4 leading-relaxed">
+                <strong>View:</strong> The camera faces OUT of the screen towards you. Drag the red dot (an object on the glass). 
+                The controller centers the camera horizontally on the dot, while mechanically enforcing the camera remains perfectly level.
+            </p>
+        </div>
+    </div>
+
+    <canvas id="simCanvas"></canvas>
+
+<script>
+/**
+ * ------------------------------------------------------------------
+ * PORTABLE CONTROLLER TEMPLATE
+ * ------------------------------------------------------------------
+ */
+class VisualServoController {
+    constructor() {
+        // Gain is smaller because error is now measured in pixels/distance, not radians
+        this.Kp = 0.005; 
+        this.deadband = 5.0; // Deadband in pixels (distance from center of camera)
+        
+        // Base servo limits to prevent breaking the arm
+        this.limit_min = 10 * (Math.PI / 180);  // 10 degrees (Right side limit)
+        this.limit_max = 170 * (Math.PI / 180); // 170 degrees (Left side limit)
+        
+        // To keep the camera normal horizontal, Link 2 must point exactly UP (90 degrees globally)
+        this.link2_target_global_angle = 90 * (Math.PI / 180);
+    }
+
+    /**
+     * @param {number} camera_error_x - The horizontal pixel error: (target_x - camera_x).
+     * @param {number} current_theta1 - The current base servo angle in radians.
+     * @returns {Object} { theta1, theta2 } target commands in radians
+     */
+    update(camera_error_x, current_theta1) {
+        let cmd_velocity = 0;
+
+        // 1. Check Deadband (If the target is close enough to center X, stop moving)
+        if (Math.abs(camera_error_x) > this.deadband) {
+            // 2. Proportional Control
+            // Note: If error is positive (target to the right of camera in world space), 
+            // the camera needs to move right.
+            // Because X = L1 * cos(theta1), to INCREASE X, we must DECREASE theta1.
+            // Hence, the negative sign on the controller.
+            cmd_velocity = -this.Kp * camera_error_x;
+        }
+
+        // 3. Integrate velocity to get new position for Base Servo
+        let new_theta1 = current_theta1 + cmd_velocity;
+
+        // 4. Clamp to reachable space (if target is too far, it stops at the limit)
+        new_theta1 = Math.max(this.limit_min, Math.min(this.limit_max, new_theta1));
+
+        // 5. Calculate Elbow Servo (Theta 2) to maintain horizontal camera.
+        // Given your DH setup: Z2 is inverted, so Link 2 Global = Theta1 - Theta2
+        // We want Link 2 Global = 90 deg. 
+        // Therefore: 90 = Theta1 - Theta2  ==>  Theta2 = Theta1 - 90
+        let new_theta2 = new_theta1 - this.link2_target_global_angle;
+
+        return {
+            theta1: new_theta1,
+            theta2: new_theta2
+        };
+    }
+}
+
+
+/**
+ * ------------------------------------------------------------------
+ * VISUALIZER & SIMULATION ENVIRONMENT
+ * ------------------------------------------------------------------
+ */
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+let width, height;
+
+// Simulation State
+let L1 = 200;
+let L2 = 120;
+let current_t1 = 90 * (Math.PI / 180); // Start pointing straight up
+let current_t2 = 0;
+
+// Interactive Target
+let target = { x: 0, y: 350, radius: 14, dragging: false };
+
+// Initialize Controller
+const controller = new VisualServoController();
+
+// UI Elements setup
+const els = {
+    l1: document.getElementById('l1-slider'),
+    l2: document.getElementById('l2-slider'),
+    kp: document.getElementById('kp-slider'),
+    db: document.getElementById('deadband-slider'),
+    l1v: document.getElementById('l1-val'),
+    l2v: document.getElementById('l2-val'),
+    kpv: document.getElementById('kp-val'),
+    dbv: document.getElementById('deadband-val'),
+    t1o: document.getElementById('t1-out'),
+    t2o: document.getElementById('t2-out')
+};
+
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Mouse/Touch Interaction
+function getMousePos(evt) {
+    let clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+    let clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+    
+    // Transform from Screen space to Math space (origin at bottom center, Y up)
+    return {
+        x: clientX - width / 2,
+        y: -(clientY - (height - 100)) // Origin is 100px from the bottom
+    };
+}
+
+canvas.addEventListener('mousedown', e => {
+    let pos = getMousePos(e);
+    let dist = Math.hypot(pos.x - target.x, pos.y - target.y);
+    if (dist < target.radius * 2.5) target.dragging = true;
+});
+window.addEventListener('mouseup', () => target.dragging = false);
+window.addEventListener('mousemove', e => {
+    if (target.dragging) {
+        let pos = getMousePos(e);
+        target.x = pos.x;
+        target.y = pos.y;
+    }
+});
+// Touch support
+canvas.addEventListener('touchstart', e => {
+    let pos = getMousePos(e);
+    let dist = Math.hypot(pos.x - target.x, pos.y - target.y);
+    if (dist < target.radius * 3) {
+        target.dragging = true;
+        e.preventDefault();
+    }
+}, {passive: false});
+window.addEventListener('touchend', () => target.dragging = false);
+window.addEventListener('touchmove', e => {
+    if (target.dragging) {
+        let pos = getMousePos(e);
+        target.x = pos.x;
+        target.y = pos.y;
+        e.preventDefault();
+    }
+}, {passive: false});
+
+function drawCircle(x, y, r, fill, stroke, lineWidth = 2) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { 
+        ctx.strokeStyle = stroke; 
+        ctx.lineWidth = lineWidth;
+        ctx.stroke(); 
+    }
+}
+
+function drawLine(x1, y1, x2, y2, color, width) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+}
+
+function updateUI() {
+    L1 = parseFloat(els.l1.value);
+    L2 = parseFloat(els.l2.value);
+    controller.Kp = parseFloat(els.kp.value);
+    controller.deadband = parseFloat(els.db.value);
+
+    els.l1v.innerText = L1;
+    els.l2v.innerText = L2;
+    els.kpv.innerText = controller.Kp;
+    els.dbv.innerText = controller.deadband;
+    
+    els.t1o.innerText = (current_t1 * 180 / Math.PI).toFixed(1) + '°';
+    els.t2o.innerText = (current_t2 * 180 / Math.PI).toFixed(1) + '°';
+}
+
+function render() {
+    updateUI();
+
+    // -- 1. Kinematics & Camera Position --
+    // Link 1 end
+    let x1 = L1 * Math.cos(current_t1);
+    let y1 = L1 * Math.sin(current_t1);
+    
+    // Link 2 end (Camera position). Link 2 is enforced to be 90 degrees (Math.PI/2) globally
+    let global_link2_angle = current_t1 - current_t2; // DH rule
+    let cx = x1 + L2 * Math.cos(global_link2_angle);
+    let cy = y1 + L2 * Math.sin(global_link2_angle);
+
+    // -- 2. Run Visual Servo Controller --
+    // Error is horizontal displacement. 
+    // Because the camera is perfectly level, its X axis aligns with the world X axis.
+    let error_x = target.x - cx; 
+    let commands = controller.update(error_x, current_t1);
+    
+    // Apply commands to servos (Smooth it out to simulate physical servo travel time)
+    current_t1 += (commands.theta1 - current_t1) * 0.15; 
+    current_t2 = commands.theta2; // Theta2 reacts instantly relative to theta1 to keep head level
+
+    // -- 3. Rendering --
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.save();
+    // Move origin to bottom center, flip Y so standard math coordinates work
+    ctx.translate(width / 2, height - 100);
+    ctx.scale(1, -1);
+
+    // Draw Reachable Area Arc (Camera path in X/Y plane)
+    ctx.beginPath();
+    ctx.arc(0, L2, L1, controller.limit_min, controller.limit_max);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 40;
+    ctx.stroke();
+
+    // Recalculate kinematics for drawing based on new smoothed angles
+    x1 = L1 * Math.cos(current_t1);
+    y1 = L1 * Math.sin(current_t1);
+    global_link2_angle = current_t1 - current_t2;
+    cx = x1 + L2 * Math.cos(global_link2_angle);
+    cy = y1 + L2 * Math.sin(global_link2_angle);
+
+    // Draw Tracking Error Line (Visual aid showing X disparity)
+    if (Math.abs(error_x) > controller.deadband) {
+        ctx.beginPath();
+        ctx.moveTo(cx, target.y);
+        ctx.lineTo(target.x, target.y);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)'; // Red dashed
+        ctx.setLineDash([5, 5]);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // Draw Arm Linkages
+    drawLine(0, 0, x1, y1, '#3b82f6', 14); // Link 1 (Blue)
+    drawLine(x1, y1, cx, cy, '#10b981', 12); // Link 2 (Green) - Always Vertical
+    
+    // Draw Joints
+    drawCircle(0, 0, 10, '#94a3b8', '#475569'); // Base Joint
+    drawCircle(x1, y1, 10, '#94a3b8', '#475569'); // Elbow Joint
+
+    // Draw Front-Facing Camera Module
+    ctx.save();
+    ctx.translate(cx, cy);
+    
+    // Camera Body
+    ctx.fillStyle = '#334155';
+    ctx.beginPath();
+    ctx.roundRect(-25, -25, 50, 50, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Camera Lens Outer
+    drawCircle(0, 0, 16, '#0f172a', '#475569', 2);
+    // Camera Lens Inner (Glass)
+    drawCircle(0, 0, 10, '#1e293b', null);
+    // Glare
+    drawCircle(4, 4, 3, 'rgba(255,255,255,0.4)', null);
+
+    // Camera FOV frame (Representing the image bounds mapped to world)
+    let fovW = 200;
+    let fovH = 150;
+    ctx.beginPath();
+    ctx.rect(-fovW/2, -fovH/2, fovW, fovH);
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.3)'; // Amber bounds
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]);
+    ctx.stroke();
+    
+    // Crosshairs
+    ctx.beginPath();
+    ctx.moveTo(-fovW/2, 0); ctx.lineTo(fovW/2, 0);
+    ctx.moveTo(0, -fovH/2); ctx.lineTo(0, fovH/2);
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.15)';
+    ctx.stroke();
+    
+    ctx.restore();
+
+    // Draw Target
+    drawCircle(target.x, target.y, target.radius, '#ef4444', '#991b1b', 3);
+    // Target inner glow
+    drawCircle(target.x, target.y, target.radius * 0.4, '#f87171', null);
+
+    ctx.restore();
+    requestAnimationFrame(render);
+}
+
+// Start simulation loop
+render();
+</script>
+</body>
+</html>
