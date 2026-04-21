@@ -55,6 +55,8 @@ ARM_IK_BOUNDARY_PULL_IN = 0.35  # inches pulled inward from max reach during tra
                                  # avoids q2 freezing near full extension
 ARM_IK_TIP_ANGLE_LIMIT_DEG = 90.0  # hard safety clamp for linkage-2 tip angle (q1+q2)
 ARM_TRACK_OUTLIER_REJECT_PX = 200.0  # reject detections > this many px from EMA
+ARM_TRACK_REACQUIRE_RAMP_SEC = 0.8  # seconds to ramp from soft-start to full step
+ARM_IK_ACQUIRE_STEP_SCALE = 0.25  # fraction of max_joint_step used right after reacquire
 
 # Arm tracking control defaults (legacy, kept for reference)
 ARM_TRACK_MAX_STEP_RAD = 0.08

@@ -22,6 +22,7 @@ from std_srvs.srv import Trigger
 from vision_msgs.msg import Detection2D
 
 from face_lock.constants import (
+    ARM_IK_ACQUIRE_STEP_SCALE,
     ARM_CONTROL_RATE_HZ,
     ARM_ELBOW_UP,
     ARM_IK_BOUNDARY_PULL_IN,
@@ -34,6 +35,7 @@ from face_lock.constants import (
     ARM_TRACK_EMA_ALPHA,
     ARM_TRACK_EMA_TAU_SEC,
     ARM_TRACK_OUTLIER_REJECT_PX,
+    ARM_TRACK_REACQUIRE_RAMP_SEC,
     ARM_TRACK_TIMEOUT_SEC,
     DEADLOCK_HOME_RAD,
     DEADLOCK_JOINT_NAME,
@@ -129,6 +131,8 @@ class ArmController(LifecycleNode):
 
         # Detection EMA state
         self._last_detection_time: float = 0.0
+        self._acquired_time: float = 0.0
+        self._had_recent_detection: bool = False
         self._x_filtered: Optional[float] = None
         self._y_filtered: Optional[float] = None
         self._last_debug_log_time: float = 0.0
@@ -149,6 +153,8 @@ class ArmController(LifecycleNode):
         self.declare_parameter("boundary_pull_in", ARM_IK_BOUNDARY_PULL_IN)
         self.declare_parameter("tip_angle_limit_deg", ARM_IK_TIP_ANGLE_LIMIT_DEG)
         self.declare_parameter("outlier_reject_px", ARM_TRACK_OUTLIER_REJECT_PX)
+        self.declare_parameter("reacquire_ramp_sec", ARM_TRACK_REACQUIRE_RAMP_SEC)
+        self.declare_parameter("acquire_step_scale", ARM_IK_ACQUIRE_STEP_SCALE)
         self.declare_parameter("control_on_detection", True)
 
     # ── helpers ──────────────────────────────────────────────────────
@@ -196,6 +202,12 @@ class ArmController(LifecycleNode):
         self._outlier_reject_px = self._pf(
             "outlier_reject_px", ARM_TRACK_OUTLIER_REJECT_PX
         )
+        self._reacquire_ramp_sec = self._pf(
+            "reacquire_ramp_sec", ARM_TRACK_REACQUIRE_RAMP_SEC
+        )
+        self._acquire_step_scale = max(
+            0.0, min(1.0, self._pf("acquire_step_scale", ARM_IK_ACQUIRE_STEP_SCALE))
+        )
         self._control_on_detection = self._pb("control_on_detection", True)
 
         # Initialise IK angles from home servo position
@@ -230,6 +242,8 @@ class ArmController(LifecycleNode):
         self.get_logger().info("Activating arm controller (IK mode)")
         self._active = True
         self._last_detection_time = time.monotonic()
+        self._acquired_time = 0.0
+        self._had_recent_detection = False
         self._x_filtered = None
         self._y_filtered = None
         # Activate lifecycle publishers first, then send home so the arm
@@ -250,6 +264,8 @@ class ArmController(LifecycleNode):
         self._deadlock_rad = DEADLOCK_HOME_RAD
         self._x_filtered = None
         self._y_filtered = None
+        self._acquired_time = 0.0
+        self._had_recent_detection = False
         s1, s2 = _ik_to_servo(self._q1, self._q2)
         self._publish_joint_command(s1, s2)
         return super().on_deactivate(state)
@@ -293,11 +309,14 @@ class ArmController(LifecycleNode):
         cy = float(msg.bbox.center.position.y)
 
         now = time.monotonic()
-        if self._x_filtered is None or self._y_filtered is None:
+        is_first_detection = self._x_filtered is None or self._y_filtered is None
+        if is_first_detection:
             self._x_filtered = cx
             self._y_filtered = cy
         else:
-            dist_px = math.hypot(cx - self._x_filtered, cy - self._y_filtered)
+            xf = float(self._x_filtered)
+            yf = float(self._y_filtered)
+            dist_px = math.hypot(cx - xf, cy - yf)
             if dist_px > self._outlier_reject_px:
                 self.get_logger().debug(
                     f"[ARM] outlier detection ignored: dist={dist_px:.1f}px "
@@ -306,11 +325,15 @@ class ArmController(LifecycleNode):
                 return
             dt = now - self._last_detection_time
             a = 1.0 - math.exp(-dt / max(self._ema_tau, 1e-6))
-            self._x_filtered = a * cx + (1.0 - a) * self._x_filtered
-            self._y_filtered = a * cy + (1.0 - a) * self._y_filtered
+            self._x_filtered = a * cx + (1.0 - a) * xf
+            self._y_filtered = a * cy + (1.0 - a) * yf
 
         self._last_detection_time = now
-        if self._control_on_detection:
+        if not self._had_recent_detection:
+            self._acquired_time = now
+            self._had_recent_detection = True
+
+        if self._control_on_detection and not is_first_detection:
             # React immediately to new detections instead of waiting for the timer tick.
             self._control_loop()
 
@@ -320,7 +343,9 @@ class ArmController(LifecycleNode):
             return
 
         # Hold position when face is lost
-        if time.monotonic() - self._last_detection_time > self._track_timeout:
+        now = time.monotonic()
+        if now - self._last_detection_time > self._track_timeout:
+            self._had_recent_detection = False
             return
 
         if self._x_filtered is None or self._y_filtered is None:
@@ -416,7 +441,15 @@ class ArmController(LifecycleNode):
                 f"(raw dist={tgt_dist:.2f}\")"
             )
 
-        new_q1, new_q2 = result
+        desired_q1, desired_q2 = result
+
+        # Hard safety clamp on desired IK target: keep linkage-2 tip angle
+        # (q1+q2) within +/- limit before joint-step limiting.
+        desired_tip = desired_q1 + desired_q2
+        if desired_tip > self._tip_angle_limit:
+            desired_q2 = self._tip_angle_limit - desired_q1
+        elif desired_tip < -self._tip_angle_limit:
+            desired_q2 = -self._tip_angle_limit - desired_q1
 
         # ── proportional joint-step (preserves direction ratio) ──────
         # Independent per-joint clamping is wrong near max extension:
@@ -426,8 +459,15 @@ class ArmController(LifecycleNode):
         # Proportional scaling gives the full ms budget to the largest
         # change and scales the other joint down accordingly.
         ms = self._max_joint_step
-        needed_q1 = new_q1 - self._q1
-        needed_q2 = new_q2 - self._q2
+        if self._had_recent_detection and self._reacquire_ramp_sec > 0.0:
+            age = max(0.0, now - self._acquired_time)
+            if age < self._reacquire_ramp_sec:
+                t = age / self._reacquire_ramp_sec
+                ramp_scale = self._acquire_step_scale + (1.0 - self._acquire_step_scale) * t
+                ms *= ramp_scale
+
+        needed_q1 = desired_q1 - self._q1
+        needed_q2 = desired_q2 - self._q2
         max_needed = max(abs(needed_q1), abs(needed_q2))
         if max_needed > ms:
             scale = ms / max_needed
@@ -438,14 +478,6 @@ class ArmController(LifecycleNode):
             dq2 = needed_q2
         new_q1 = self._q1 + dq1
         new_q2 = self._q2 + dq2
-
-        # Hard safety clamp: keep linkage-2 tip angle (q1+q2) within +/- limit
-        # so the camera cannot flip beyond the allowed view cone.
-        tip_angle = new_q1 + new_q2
-        if tip_angle > self._tip_angle_limit:
-            new_q2 = self._tip_angle_limit - new_q1
-        elif tip_angle < -self._tip_angle_limit:
-            new_q2 = -self._tip_angle_limit - new_q1
 
         # ── convert to servo angles and validate ─────────────────────
         s1, s2 = _ik_to_servo(new_q1, new_q2)
