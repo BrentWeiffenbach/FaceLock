@@ -24,6 +24,7 @@ from vision_msgs.msg import Detection2D
 from face_lock.constants import (
     ARM_CONTROL_RATE_HZ,
     ARM_ELBOW_UP,
+    ARM_IK_BOUNDARY_PULL_IN,
     ARM_IK_KP_X,
     ARM_IK_KP_Y,
     ARM_IK_MAX_JOINT_STEP,
@@ -144,7 +145,9 @@ class ArmController(LifecycleNode):
         self.declare_parameter("elbow_up", ARM_ELBOW_UP)
         self.declare_parameter("control_rate_hz", ARM_CONTROL_RATE_HZ)
         self.declare_parameter("max_workspace_step", ARM_IK_MAX_WORKSPACE_STEP)
+        self.declare_parameter("boundary_pull_in", ARM_IK_BOUNDARY_PULL_IN)
         self.declare_parameter("outlier_reject_px", ARM_TRACK_OUTLIER_REJECT_PX)
+        self.declare_parameter("control_on_detection", True)
 
     # ── helpers ──────────────────────────────────────────────────────
 
@@ -185,9 +188,11 @@ class ArmController(LifecycleNode):
         self._max_workspace_step = self._pf(
             "max_workspace_step", ARM_IK_MAX_WORKSPACE_STEP
         )
+        self._boundary_pull_in = self._pf("boundary_pull_in", ARM_IK_BOUNDARY_PULL_IN)
         self._outlier_reject_px = self._pf(
             "outlier_reject_px", ARM_TRACK_OUTLIER_REJECT_PX
         )
+        self._control_on_detection = self._pb("control_on_detection", True)
 
         # Initialise IK angles from home servo position
         self._q1, self._q2 = _servo_to_ik(LOWER_ARM_HOME_RAD, UPPER_ARM_HOME_RAD)
@@ -301,6 +306,9 @@ class ArmController(LifecycleNode):
             self._y_filtered = a * cy + (1.0 - a) * self._y_filtered
 
         self._last_detection_time = now
+        if self._control_on_detection:
+            # React immediately to new detections instead of waiting for the timer tick.
+            self._control_loop()
 
     def _control_loop(self) -> None:
         """Fixed-rate control: pixel error → workspace Δ → IK → joints."""
@@ -374,8 +382,12 @@ class ArmController(LifecycleNode):
         tgt_y = cur_y + dy
         tgt_dist = math.sqrt(tgt_x * tgt_x + tgt_y * tgt_y)
         _clamped = False
-        if tgt_dist > _REACH_MAX - _REACH_MARGIN:
-            scale = (_REACH_MAX - _REACH_MARGIN) / tgt_dist
+        max_target_radius = max(
+            _REACH_MIN + _REACH_MARGIN + 0.05,
+            _REACH_MAX - _REACH_MARGIN - max(0.0, self._boundary_pull_in),
+        )
+        if tgt_dist > max_target_radius:
+            scale = max_target_radius / tgt_dist
             tgt_x, tgt_y = tgt_x * scale, tgt_y * scale
             _clamped = True
         elif 0.0 < tgt_dist < _REACH_MIN + _REACH_MARGIN:
