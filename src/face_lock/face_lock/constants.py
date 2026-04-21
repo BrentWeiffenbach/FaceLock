@@ -43,8 +43,10 @@ UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straigh
 ARM_ELBOW_UP = True                        # IK solution preference
 
 # Visual-servoing IK P-controller
-ARM_IK_KP_X = -0.0005        
-ARM_IK_KP_Y = 0.0005     
+# Gains: kp_x negative confirmed working (no image derotation).
+# At max error (320 px), step = 0.96" — within max_joint_step clamp.
+ARM_IK_KP_X = -0.003
+ARM_IK_KP_Y = 0.003
 ARM_IK_MAX_JOINT_STEP = 0.04 # max joint angle change per update (rad); 0.04×50 Hz ≈ 2 rad/s
 ARM_CONTROL_RATE_HZ = 50.0   # arm controller timer frequency (Hz)
 
@@ -57,6 +59,9 @@ UPPER_ARM_TRACK_GAIN = 0.45
 
 # Visual-servoing controller parameters (PWM-space)
 ARM_TRACK_EMA_ALPHA = 0.15       # Lower alpha = heavier smoothing = less jitter
+ARM_TRACK_EMA_TAU_SEC = 0.4     # Time constant for time-based EMA (seconds).
+                                 # At 1 Hz detection: alpha ≈ 1-e^(-1/0.4) ≈ 0.92
+                                 # (near-instant snap). At 30 Hz: alpha ≈ 0.033 (smooth).
 ARM_TRACK_KP_LOWER_US_PX = 2.0  # P-gain for Joint 1 (Base)  [µs / px]
 ARM_TRACK_KP_UPPER_US_PX = 1.5  # P-gain for Joint 2 (Elbow) [µs / px]
 ARM_TRACK_MAX_SLEW_US = 20      # Max PWM change per update  [µs]

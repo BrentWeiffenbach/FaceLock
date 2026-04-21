@@ -29,6 +29,7 @@ from face_lock.constants import (
     ARM_IK_MAX_JOINT_STEP,
     ARM_TRACK_DEADBAND_PX,
     ARM_TRACK_EMA_ALPHA,
+    ARM_TRACK_EMA_TAU_SEC,
     ARM_TRACK_TIMEOUT_SEC,
     DEADLOCK_HOME_RAD,
     DEADLOCK_JOINT_NAME,
@@ -132,6 +133,7 @@ class ArmController(LifecycleNode):
         self.declare_parameter("image_width", 640.0)
         self.declare_parameter("image_height", 480.0)
         self.declare_parameter("ema_alpha", ARM_TRACK_EMA_ALPHA)
+        self.declare_parameter("ema_tau_sec", ARM_TRACK_EMA_TAU_SEC)
         self.declare_parameter("kp_x", ARM_IK_KP_X)
         self.declare_parameter("kp_y", ARM_IK_KP_Y)
         self.declare_parameter("max_joint_step", ARM_IK_MAX_JOINT_STEP)
@@ -168,6 +170,7 @@ class ArmController(LifecycleNode):
         self._image_width = self._pf("image_width", 640.0)
         self._image_height = self._pf("image_height", 480.0)
         self._ema_alpha = self._pf("ema_alpha", ARM_TRACK_EMA_ALPHA)
+        self._ema_tau = self._pf("ema_tau_sec", ARM_TRACK_EMA_TAU_SEC)
         self._kp_x = self._pf("kp_x", ARM_IK_KP_X)
         self._kp_y = self._pf("kp_y", ARM_IK_KP_Y)
         self._max_joint_step = self._pf("max_joint_step", ARM_IK_MAX_JOINT_STEP)
@@ -255,22 +258,32 @@ class ArmController(LifecycleNode):
             self._q1, self._q2 = _servo_to_ik(s1, s2)
 
     def _detection_cb(self, msg: Detection2D) -> None:
-        """Store latest detection with EMA low-pass filter."""
+        """Store latest detection with time-based EMA low-pass filter.
+
+        Using time-based EMA (alpha = 1 - exp(-dt/tau)) rather than a fixed
+        per-frame alpha means the filter responds consistently regardless of
+        the detection rate.  face_recognition runs at ~1 Hz on the Pi; a
+        fixed alpha=0.15 would need 20+ detections (~20 s) to converge,
+        whereas a tau=0.4 s gives alpha≈0.92 at 1 Hz (near-instant snap)
+        and alpha≈0.033 at 30 Hz (smooth).
+        """
         if not self._active:
             return
 
         cx = float(msg.bbox.center.position.x)
         cy = float(msg.bbox.center.position.y)
 
+        now = time.monotonic()
         if self._x_filtered is None or self._y_filtered is None:
             self._x_filtered = cx
             self._y_filtered = cy
         else:
-            a = self._ema_alpha
+            dt = now - self._last_detection_time
+            a = 1.0 - math.exp(-dt / max(self._ema_tau, 1e-6))
             self._x_filtered = a * cx + (1.0 - a) * self._x_filtered
             self._y_filtered = a * cy + (1.0 - a) * self._y_filtered
 
-        self._last_detection_time = time.monotonic()
+        self._last_detection_time = now
 
     def _control_loop(self) -> None:
         """Fixed-rate control: pixel error → workspace Δ → IK → joints."""
