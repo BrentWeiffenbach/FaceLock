@@ -59,6 +59,7 @@ class FaceRecognitionNode(LifecycleNode):
         self._all_passwords: List[List[List[str]]] = []
         self._pw_progress: List[int] = []
         self._pw_waiting_neutral: List[bool] = []
+        self._pw_last_matched_shapes: List[set] = []  # shapes from last matched step
         self._password: List[List[str]] = []
         self._active_password_name: str = ""
         self._cur_raw_image: Optional[np.ndarray] = None
@@ -174,6 +175,7 @@ class FaceRecognitionNode(LifecycleNode):
         self._all_passwords.clear()
         self._pw_progress.clear()
         self._pw_waiting_neutral.clear()
+        self._pw_last_matched_shapes.clear()
         self._password.clear()
         self._active_password_name = ""
         self._cur_raw_image = None
@@ -197,6 +199,7 @@ class FaceRecognitionNode(LifecycleNode):
         self._all_passwords.clear()
         self._pw_progress.clear()
         self._pw_waiting_neutral.clear()
+        self._pw_last_matched_shapes.clear()
         for name in self._list_npy(PASSWORDS_DIR):
             try:
                 data = np.load(
@@ -205,6 +208,7 @@ class FaceRecognitionNode(LifecycleNode):
                 self._all_passwords.append([list(step) for step in data])
                 self._pw_progress.append(0)
                 self._pw_waiting_neutral.append(False)
+                self._pw_last_matched_shapes.append(set())
             except Exception as e:
                 self.get_logger().warn(f"Could not load password '{name}': {e}")
         return len(self._all_passwords)
@@ -378,12 +382,6 @@ class FaceRecognitionNode(LifecycleNode):
         for i, pw in enumerate(self._all_passwords):
             if not pw:
                 continue
-            if not active:
-                # Neutral face clears the wait-for-neutral flag so next step can register
-                self._pw_waiting_neutral[i] = False
-                continue
-            if self._pw_waiting_neutral[i]:
-                continue
             expected = set(pw[self._pw_progress[i]])
             if expected and expected.issubset(active):
                 self._pw_progress[i] += 1
@@ -394,14 +392,7 @@ class FaceRecognitionNode(LifecycleNode):
                     self.get_logger().info("Password matched — publishing signal")
                     self.password_matched_pub.publish(Bool(data=True))
                     self._pw_progress[i] = 0
-                else:
-                    self._pw_waiting_neutral[i] = True
-            elif self._pw_progress[i] > 0:
-                self.get_logger().info(
-                    f"Password mismatch at step {self._pw_progress[i] + 1} — resetting"
-                )
-                self._pw_progress[i] = 0
-                self._pw_waiting_neutral[i] = False
+                    self._pw_last_matched_shapes[i] = set()
 
     def _wait_for_image(self, timeout: float = 2.0) -> Optional[np.ndarray]:
         start = time.time()
