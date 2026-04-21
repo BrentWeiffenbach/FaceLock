@@ -20,12 +20,16 @@ Controller (matches example.html with sign flip for physical servo):
 from typing import Any, Optional
 
 import math
+import os
 import time
 
+import cv2
+import numpy as np
 import rclpy
+from cv_bridge import CvBridge
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.node import Publisher, Subscription
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import Image, JointState
 from std_srvs.srv import Trigger
 from vision_msgs.msg import Detection2D
 
@@ -97,6 +101,13 @@ class ArmController(LifecycleNode):
         self._y_filtered: Optional[float] = None
         self._last_debug_log_time: float = 0.0
 
+        # Debug image saving
+        self._bridge = CvBridge()
+        self._latest_frame: Optional[np.ndarray] = None
+        self._command_count: int = 0
+        self._debug_image_dir = "/tmp/arm_debug"
+        os.makedirs(self._debug_image_dir, exist_ok=True)
+
         # Parameters
         self.declare_parameter("image_width", 640.0)
         self.declare_parameter("image_height", 480.0)
@@ -155,6 +166,9 @@ class ArmController(LifecycleNode):
         self.detection_sub = self.create_subscription(
             Detection2D, "/face_recognition/detection", self._detection_cb, 10
         )
+        self.image_sub = self.create_subscription(
+            Image, "/camera/image_raw", self._image_cb, 1
+        )
         self.reset_arm_srv = self.create_service(
             Trigger, "reset_arm", self._reset_arm_cb
         )
@@ -194,6 +208,13 @@ class ArmController(LifecycleNode):
         return TransitionCallbackReturn.SUCCESS
 
     # ── callbacks ────────────────────────────────────────────────────
+
+    def _image_cb(self, msg: Image) -> None:
+        """Store latest camera frame for debug overlay."""
+        try:
+            self._latest_frame = self._bridge.imgmsg_to_cv2(msg, "bgr8")
+        except Exception:
+            pass
 
     def _joint_states_cb(self, msg: JointState) -> None:
         """Sync internal θ1 with actual servo feedback."""
@@ -275,6 +296,51 @@ class ArmController(LifecycleNode):
             self._limit_min, min(self._limit_max, self._theta1 + step)
         )
         self._publish_joint_command()
+        self._maybe_save_debug_image(error_x)
+
+    # ── debug image saving ────────────────────────────────────────
+
+    def _maybe_save_debug_image(self, error_x: float) -> None:
+        """Save annotated frame every 5 control commands."""
+        self._command_count += 1
+        if self._command_count % 5 != 0:
+            return
+        if self._latest_frame is None:
+            return
+        if self._x_filtered is None or self._y_filtered is None:
+            return
+
+        frame = self._latest_frame.copy()
+        h, w = frame.shape[:2]
+        cx_img = int(w / 2)
+        cy_img = int(h / 2)
+        fx = int(self._x_filtered)
+        fy = int(self._y_filtered)
+
+        # Green crosshair at image centre
+        cv2.drawMarker(frame, (cx_img, cy_img), (0, 255, 0),
+                        cv2.MARKER_CROSS, 30, 2)
+        cv2.putText(frame, "IMG_CENTER", (cx_img + 5, cy_img - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+        # Red dot at filtered face detection
+        cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
+        cv2.putText(frame, f"FACE ({fx},{fy})", (fx + 10, fy - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+        # Orange line between them
+        cv2.line(frame, (cx_img, cy_img), (fx, fy), (0, 165, 255), 2)
+
+        # Info text
+        info = (f"err_x={error_x:+.1f}px  "
+                f"theta1={math.degrees(self._theta1):.1f}deg  "
+                f"cmd#{self._command_count}")
+        cv2.putText(frame, info, (10, h - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        path = os.path.join(self._debug_image_dir,
+                            f"arm_debug_{self._command_count:05d}.jpg")
+        cv2.imwrite(path, frame)
 
     # ── publishing ───────────────────────────────────────────────────
 
