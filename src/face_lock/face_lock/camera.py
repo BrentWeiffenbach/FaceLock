@@ -176,21 +176,28 @@ class CameraNode(LifecycleNode):
             return
 
         # ── Image derotation ─────────────────────────────────────────
-        # The camera is fixed to the tip of linkage-2, so it rotates with the
-        # arm.  We compute the camera's world-frame orientation from the
-        # current servo angles and rotate the image the opposite way so that
-        # "up" in the image always means "up" in the world.  This ensures
-        # MediaPipe face detection works at all arm angles, and that pixel
-        # errors fed to the arm controller have the correct world-frame sign.
+        # The camera is fixed to the tip of linkage-2, so it rolls (rotates
+        # around its optical axis = world +Z) as the arm sweeps.  We compute
+        # the camera's world-frame "up" direction and rotate the image the
+        # opposite way so that image-up always means world-up.
         #
-        # IK mapping (from constants):  q = DIRECTION * (servo - OFFSET)
-        #   q1 = s1  (LOWER: DIR=1, OFFSET=0)
-        #   q2 = s2 - π/2  (UPPER: DIR=1, OFFSET=π/2)
-        # Camera world angle = q1 + q2; at home (s1=s2=π/2): angle=π/2 → 0° correction.
+        # Physical frame geometry (per hardware description):
+        #   Base servo:  rotation axis = +Z_world
+        #   Elbow servo: flipped 180° around X from base → rotation axis = -Z_world
+        #
+        # Camera-up world angle = q1 + q2_base + q2_elbow
+        #   q2_base = (q1 - q1_home) contributes +1 per radian of q1
+        #   q2_elbow: elbow rotates around -Z, so it contributes -1 per radian of q2
+        #
+        # camera_up_angle_from_+X = q1 - q2
+        # Correction = -(camera_up_angle - home_angle) = -(q1 - q2 - π/2)
+        # BUT: when camera rolled CCW by φ, content appears CW; correct by applying -φ.
+        # correction_deg = (q1 - q2 - π/2) × (180/π)
+        # Verified: home→0°, arm-right→-90°(CW), arm-left→+90°(CCW) ✓
         q1_cam = LOWER_ARM_IK_DIRECTION * (self._s1_servo - LOWER_ARM_IK_ZERO_OFFSET)
         q2_cam = UPPER_ARM_IK_DIRECTION * (self._s2_servo - UPPER_ARM_IK_ZERO_OFFSET)
         correction_deg = (
-            -(q1_cam + q2_cam - math.pi / 2) * (180.0 / math.pi)
+            (q1_cam - q2_cam - math.pi / 2) * (180.0 / math.pi)
             + self._rotation_offset_deg
         )
         if abs(correction_deg) > 0.5:
