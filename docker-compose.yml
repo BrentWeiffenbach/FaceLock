@@ -18,4 +18,4 @@ services:
     tty: true
     stdin_open: true
     # command: sleep infinity
-    command: /bin/bash -c "cd /workspaces/FaceLock && git pull && colcon build && source install/setup.bash && ros2 launch face_lock startup.launch.py"
+    command: /bin/bash -c "cd /workspaces/FaceLock && colcon build && source install/setup.bash && ros2 launch face_lock startup.launch.py"
