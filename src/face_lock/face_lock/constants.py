@@ -66,7 +66,6 @@ ARM_SERVO_LIMIT_MIN_RAD = math.radians(10)    # servo limit (10°)
 ARM_SERVO_LIMIT_MAX_RAD = math.radians(170)   # servo limit (170°)
 ARM_CONTROL_RATE_HZ = 20.0                    # control loop frequency (Hz)
 ARM_TRACK_TIMEOUT_SEC = 1.5                   # seconds before "face lost"
-ARM_TRACK_EMA_ALPHA = 0.15                    # EMA smoothing for detection pos
 ARM_SMOOTHING_ALPHA = 0.15                    # command smoothing (same as example.html)
 ARM_MAX_STEP_RAD = math.radians(5)            # hard cap: max θ1 change per tick
 

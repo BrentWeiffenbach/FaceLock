@@ -359,11 +359,11 @@ class FaceRecognitionNode(LifecycleNode):
         if not xs or not ys:
             return
 
+        # Use mean of all landmarks (more stable than bounding-box centre)
+        center_x = (sum(xs) / len(xs)) * float(msg.width)
+        center_y = (sum(ys) / len(ys)) * float(msg.height)
         min_x, max_x = min(xs), max(xs)
         min_y, max_y = min(ys), max(ys)
-
-        center_x = ((min_x + max_x) / 2.0) * float(msg.width)
-        center_y = ((min_y + max_y) / 2.0) * float(msg.height)
         size_x = (max_x - min_x) * float(msg.width)
         size_y = (max_y - min_y) * float(msg.height)
 

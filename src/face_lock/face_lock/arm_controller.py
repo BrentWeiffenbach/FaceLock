@@ -41,7 +41,6 @@ from face_lock.constants import (
     ARM_SERVO_LIMIT_MAX_RAD,
     ARM_SERVO_LIMIT_MIN_RAD,
     ARM_SMOOTHING_ALPHA,
-    ARM_TRACK_EMA_ALPHA,
     ARM_TRACK_TIMEOUT_SEC,
     DEADLOCK_HOME_RAD,
     DEADLOCK_JOINT_NAME,
@@ -95,10 +94,10 @@ class ArmController(LifecycleNode):
         self._theta1: float = LOWER_ARM_HOME_RAD
         self._deadlock_rad: float = DEADLOCK_HOME_RAD
 
-        # Detection EMA state
+        # Detection state (raw — no EMA)
         self._last_detection_time: float = 0.0
-        self._x_filtered: Optional[float] = None
-        self._y_filtered: Optional[float] = None
+        self._face_x: Optional[float] = None
+        self._face_y: Optional[float] = None
         self._last_debug_log_time: float = 0.0
 
         # Debug image saving
@@ -117,7 +116,6 @@ class ArmController(LifecycleNode):
         self.declare_parameter("servo_limit_max_rad", ARM_SERVO_LIMIT_MAX_RAD)
         self.declare_parameter("control_rate_hz", ARM_CONTROL_RATE_HZ)
         self.declare_parameter("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
-        self.declare_parameter("ema_alpha", ARM_TRACK_EMA_ALPHA)
         self.declare_parameter("smoothing_alpha", ARM_SMOOTHING_ALPHA)
         self.declare_parameter("max_step_rad", ARM_MAX_STEP_RAD)
 
@@ -143,7 +141,6 @@ class ArmController(LifecycleNode):
         self._limit_min = self._pf("servo_limit_min_rad", ARM_SERVO_LIMIT_MIN_RAD)
         self._limit_max = self._pf("servo_limit_max_rad", ARM_SERVO_LIMIT_MAX_RAD)
         self._track_timeout = self._pf("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
-        self._ema_alpha = self._pf("ema_alpha", ARM_TRACK_EMA_ALPHA)
         self._smoothing_alpha = self._pf("smoothing_alpha", ARM_SMOOTHING_ALPHA)
         self._max_step_rad = self._pf("max_step_rad", ARM_MAX_STEP_RAD)
         control_hz = self._pf("control_rate_hz", ARM_CONTROL_RATE_HZ)
@@ -183,8 +180,8 @@ class ArmController(LifecycleNode):
         self.get_logger().info("Activating arm controller")
         self._active = True
         self._last_detection_time = time.monotonic()
-        self._x_filtered = None
-        self._y_filtered = None
+        self._face_x = None
+        self._face_y = None
         # Activate lifecycle publishers, then send home
         result = super().on_activate(state)
         self._theta1 = LOWER_ARM_HOME_RAD
@@ -227,26 +224,17 @@ class ArmController(LifecycleNode):
                 self._deadlock_rad = self._clamp_servo(msg.position[idx])
 
     def _detection_cb(self, msg: Detection2D) -> None:
-        """EMA-filter the face detection centre and save debug image."""
+        """Use raw detection centre directly (no EMA) and save debug image."""
         if not self._active:
             return
 
-        cx = float(msg.bbox.center.position.x)
-        cy = float(msg.bbox.center.position.y)
-
-        if self._x_filtered is None or self._y_filtered is None:
-            self._x_filtered = cx
-            self._y_filtered = cy
-        else:
-            a = self._ema_alpha
-            self._x_filtered = a * cx + (1.0 - a) * self._x_filtered
-            self._y_filtered = a * cy + (1.0 - a) * self._y_filtered
-
+        self._face_x = float(msg.bbox.center.position.x)
+        self._face_y = float(msg.bbox.center.position.y)
         self._last_detection_time = time.monotonic()
 
         # Save debug image on every detection (synced with face_recognition)
-        error_x = self._x_filtered - self._image_width / 2.0
-        self._save_debug_image(error_x, cx, cy)
+        error_x = self._face_x - self._image_width / 2.0
+        self._save_debug_image(error_x)
 
     def _control_loop(self) -> None:
         """P-control: horizontal pixel error → θ1 adjustment."""
@@ -257,11 +245,11 @@ class ArmController(LifecycleNode):
         if time.monotonic() - self._last_detection_time > self._track_timeout:
             return
 
-        if self._x_filtered is None:
+        if self._face_x is None:
             return
 
-        # ── horizontal pixel error from image centre ─────────────────
-        error_x = self._x_filtered - self._image_width / 2.0
+        # ── horizontal pixel error from image centre ─────────────────────
+        error_x = self._face_x - self._image_width / 2.0
 
         # ── debug logging (throttled to 1 Hz) ────────────────────────
         now = time.monotonic()
@@ -303,24 +291,20 @@ class ArmController(LifecycleNode):
 
     # ── debug image saving ────────────────────────────────────────
 
-    def _save_debug_image(
-        self, error_x: float, raw_cx: float, raw_cy: float
-    ) -> None:
+    def _save_debug_image(self, error_x: float) -> None:
         """Save annotated frame on each detection (synced with face_recognition)."""
         self._command_count += 1
         if self._latest_frame is None:
             return
-        if self._x_filtered is None or self._y_filtered is None:
+        if self._face_x is None or self._face_y is None:
             return
 
         frame = self._latest_frame.copy()
         h, w = frame.shape[:2]
         cx_img = int(w / 2)
         cy_img = int(h / 2)
-        fx = int(self._x_filtered)
-        fy = int(self._y_filtered)
-        rx = int(raw_cx)
-        ry = int(raw_cy)
+        fx = int(self._face_x)
+        fy = int(self._face_y)
 
         # Green crosshair at image centre
         cv2.drawMarker(frame, (cx_img, cy_img), (0, 255, 0),
@@ -328,17 +312,12 @@ class ArmController(LifecycleNode):
         cv2.putText(frame, "IMG_CENTER", (cx_img + 5, cy_img - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-        # Blue dot at RAW (unfiltered) detection from this frame
-        cv2.circle(frame, (rx, ry), 10, (255, 100, 0), -1)
-        cv2.putText(frame, f"RAW ({rx},{ry})", (rx + 12, ry + 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 100, 0), 1)
-
-        # Red dot at EMA-filtered face detection
+        # Red dot at face detection (raw, no EMA)
         cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
-        cv2.putText(frame, f"EMA ({fx},{fy})", (fx + 10, fy - 10),
+        cv2.putText(frame, f"FACE ({fx},{fy})", (fx + 10, fy - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-        # Orange line from image centre to EMA position (the actual error)
+        # Orange line from image centre to face (the actual error)
         cv2.line(frame, (cx_img, cy_img), (fx, fy), (0, 165, 255), 2)
 
         # Info text
@@ -377,8 +356,8 @@ class ArmController(LifecycleNode):
         del req
         self._theta1 = LOWER_ARM_HOME_RAD
         self._deadlock_rad = DEADLOCK_HOME_RAD
-        self._x_filtered = None
-        self._y_filtered = None
+        self._face_x = None
+        self._face_y = None
         self._publish_joint_command()
         # Freeze tracking so stale detections cannot move the arm.
         # on_activate() re-enables when CHECKING restarts next cycle.
