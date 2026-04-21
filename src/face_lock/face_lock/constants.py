@@ -49,6 +49,9 @@ ARM_IK_KP_X = -0.001
 ARM_IK_KP_Y = 0.001
 ARM_IK_MAX_JOINT_STEP = 0.2618 # max joint angle change per update (rad); 15°
 ARM_CONTROL_RATE_HZ = 20.0   # arm controller timer frequency (Hz)
+ARM_IK_MAX_WORKSPACE_STEP = 1.5  # max workspace move per control tick (inches);
+                                  # caps large jumps from false/stale detections
+ARM_TRACK_OUTLIER_REJECT_PX = 200.0  # reject detections > this many px from EMA
 
 # Arm tracking control defaults (legacy, kept for reference)
 ARM_TRACK_MAX_STEP_RAD = 0.08

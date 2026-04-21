@@ -199,8 +199,7 @@ class FaceLockManager(Node):
             RobotState.DISABLED: set(),
             RobotState.SETUP: {"camera", "face_recognition", "password_gui"},
             RobotState.CHECKING: {"camera", "face_recognition", "arm_controller"},
-            # Keep arm controller active while door is open to preserve current behavior.
-            RobotState.OPEN: {"arm_controller"},
+            RobotState.OPEN: set(),
             RobotState.UNLOCKING: {"arm_controller"},
             RobotState.LOCKING: set(),
         }
@@ -268,6 +267,7 @@ class FaceLockManager(Node):
         clients = [
             (self.camera_state, "camera"),
             (self.face_recognition_state, "face_recognition"),
+            (self.arm_controller_state, "arm_controller"),
         ]
         for client, name in clients:
             self.deactivate_node(client, name)

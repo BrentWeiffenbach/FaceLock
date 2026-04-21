@@ -27,9 +27,11 @@ from face_lock.constants import (
     ARM_IK_KP_X,
     ARM_IK_KP_Y,
     ARM_IK_MAX_JOINT_STEP,
+    ARM_IK_MAX_WORKSPACE_STEP,
     ARM_TRACK_DEADBAND_PX,
     ARM_TRACK_EMA_ALPHA,
     ARM_TRACK_EMA_TAU_SEC,
+    ARM_TRACK_OUTLIER_REJECT_PX,
     ARM_TRACK_TIMEOUT_SEC,
     DEADLOCK_HOME_RAD,
     DEADLOCK_JOINT_NAME,
@@ -141,6 +143,8 @@ class ArmController(LifecycleNode):
         self.declare_parameter("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
         self.declare_parameter("elbow_up", ARM_ELBOW_UP)
         self.declare_parameter("control_rate_hz", ARM_CONTROL_RATE_HZ)
+        self.declare_parameter("max_workspace_step", ARM_IK_MAX_WORKSPACE_STEP)
+        self.declare_parameter("outlier_reject_px", ARM_TRACK_OUTLIER_REJECT_PX)
 
     # ── helpers ──────────────────────────────────────────────────────
 
@@ -178,6 +182,12 @@ class ArmController(LifecycleNode):
         self._track_timeout = self._pf("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
         self._elbow_up = self._pb("elbow_up", ARM_ELBOW_UP)
         control_hz = self._pf("control_rate_hz", ARM_CONTROL_RATE_HZ)
+        self._max_workspace_step = self._pf(
+            "max_workspace_step", ARM_IK_MAX_WORKSPACE_STEP
+        )
+        self._outlier_reject_px = self._pf(
+            "outlier_reject_px", ARM_TRACK_OUTLIER_REJECT_PX
+        )
 
         # Initialise IK angles from home servo position
         self._q1, self._q2 = _servo_to_ik(LOWER_ARM_HOME_RAD, UPPER_ARM_HOME_RAD)
@@ -278,6 +288,13 @@ class ArmController(LifecycleNode):
             self._x_filtered = cx
             self._y_filtered = cy
         else:
+            dist_px = math.hypot(cx - self._x_filtered, cy - self._y_filtered)
+            if dist_px > self._outlier_reject_px:
+                self.get_logger().debug(
+                    f"[ARM] outlier detection ignored: dist={dist_px:.1f}px "
+                    f"(threshold={self._outlier_reject_px:.0f}px)"
+                )
+                return
             dt = now - self._last_detection_time
             a = 1.0 - math.exp(-dt / max(self._ema_tau, 1e-6))
             self._x_filtered = a * cx + (1.0 - a) * self._x_filtered
@@ -337,6 +354,11 @@ class ArmController(LifecycleNode):
         # ── workspace delta (inches) ─────────────────────────────────
         dx = self._kp_x * err_x
         dy = self._kp_y * err_y
+        workspace_step = math.hypot(dx, dy)
+        if workspace_step > self._max_workspace_step:
+            scale = self._max_workspace_step / workspace_step
+            dx *= scale
+            dy *= scale
 
         # ── current position via FK ──────────────────────────────────
         cur_x, cur_y = _forward_kinematics(self._q1, self._q2)
@@ -428,6 +450,7 @@ class ArmController(LifecycleNode):
 
     # ── services ─────────────────────────────────────────────────────
 
+
     def _reset_arm_cb(
         self, req: Trigger.Request, res: Trigger.Response
     ) -> Trigger.Response:
@@ -438,8 +461,12 @@ class ArmController(LifecycleNode):
         self._y_filtered = None
         s1, s2 = _ik_to_servo(self._q1, self._q2)
         self._publish_joint_command(s1, s2)
+        # Freeze tracking so stale detections after the password match
+        # (face_recognition deactivates ~5 s later) cannot move the arm.
+        # on_activate() re-enables this when CHECKING restarts next cycle.
+        self._active = False
         res.success = True
-        res.message = "Arm reset to home via IK"
+        res.message = "Arm reset to home via IK (tracking frozen)"
         return res
 
 
