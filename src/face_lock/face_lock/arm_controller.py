@@ -9,11 +9,11 @@ Camera-leveling constraint keeps link 2 vertical (θ1 − θ2 = π/2),
 reducing the arm to 1-DOF control.  A P-controller drives θ1 based
 on horizontal pixel error to centre the face in the camera frame.
 
-Controller (identical to example.html):
+Controller (matches example.html with sign flip for physical servo):
   error_x = face_pixel_x − image_centre_x
-  Δθ1 = −Kp · error_x          (negative: face-right → pan right)
-  θ1 = clamp(θ1 + Δθ1, limit_min, limit_max)
-  θ2 = θ1 − π/2                (camera leveling)
+  desired_θ1 = θ1 + Kp · error_x      (positive: face-right → increase θ1)
+  θ1 += (desired_θ1 − θ1) · α          (exponential smoothing, α = 0.15)
+  θ2 = θ1 − π/2                        (camera leveling)
   servo1 = θ1,  servo2 = θ2 + π/2 = θ1
 """
 
@@ -33,8 +33,10 @@ from face_lock.constants import (
     ARM_CONTROL_RATE_HZ,
     ARM_DEADBAND_PX,
     ARM_KP,
+    ARM_MAX_STEP_RAD,
     ARM_SERVO_LIMIT_MAX_RAD,
     ARM_SERVO_LIMIT_MIN_RAD,
+    ARM_SMOOTHING_ALPHA,
     ARM_TRACK_EMA_ALPHA,
     ARM_TRACK_TIMEOUT_SEC,
     DEADLOCK_HOME_RAD,
@@ -105,6 +107,8 @@ class ArmController(LifecycleNode):
         self.declare_parameter("control_rate_hz", ARM_CONTROL_RATE_HZ)
         self.declare_parameter("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
         self.declare_parameter("ema_alpha", ARM_TRACK_EMA_ALPHA)
+        self.declare_parameter("smoothing_alpha", ARM_SMOOTHING_ALPHA)
+        self.declare_parameter("max_step_rad", ARM_MAX_STEP_RAD)
 
     # ── helpers ──────────────────────────────────────────────────────
 
@@ -129,6 +133,8 @@ class ArmController(LifecycleNode):
         self._limit_max = self._pf("servo_limit_max_rad", ARM_SERVO_LIMIT_MAX_RAD)
         self._track_timeout = self._pf("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
         self._ema_alpha = self._pf("ema_alpha", ARM_TRACK_EMA_ALPHA)
+        self._smoothing_alpha = self._pf("smoothing_alpha", ARM_SMOOTHING_ALPHA)
+        self._max_step_rad = self._pf("max_step_rad", ARM_MAX_STEP_RAD)
         control_hz = self._pf("control_rate_hz", ARM_CONTROL_RATE_HZ)
 
         # Initialise θ1 from home position
@@ -251,16 +257,23 @@ class ArmController(LifecycleNode):
             return
 
         # ── P-controller ─────────────────────────────────────────────
-        # Negative gain: face-right (positive error_x) → decrease θ1 →
-        # arm pans right (camera_x = L1·cos θ1, decreasing θ1 increases
-        # cos → moves camera right in world frame).
-        delta_theta1 = -self._kp * error_x
+        # Physical servo direction: increasing servo1 → arm pans right.
+        # face-right (positive error_x) → increase θ1 → arm pans right.
+        delta_theta1 = self._kp * error_x
 
-        # ── clamp to reachable servo limits ──────────────────────────
-        new_theta1 = self._theta1 + delta_theta1
-        new_theta1 = max(self._limit_min, min(self._limit_max, new_theta1))
+        # ── compute desired and clamp to servo limits ────────────────
+        desired_theta1 = self._theta1 + delta_theta1
+        desired_theta1 = max(self._limit_min, min(self._limit_max, desired_theta1))
 
-        self._theta1 = new_theta1
+        # ── exponential smoothing (prevents instant jumps) ───────────
+        step = (desired_theta1 - self._theta1) * self._smoothing_alpha
+
+        # ── hard cap on step size per tick ────────────────────────────
+        step = max(-self._max_step_rad, min(self._max_step_rad, step))
+
+        self._theta1 = max(
+            self._limit_min, min(self._limit_max, self._theta1 + step)
+        )
         self._publish_joint_command()
 
     # ── publishing ───────────────────────────────────────────────────
