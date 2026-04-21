@@ -43,23 +43,20 @@ UPPER_ARM_IK_ZERO_OFFSET = math.pi / 2    # servo rad when q2 = 0 (elbow straigh
 ARM_ELBOW_UP = True                        # IK solution preference
 
 # Visual-servoing IK P-controller
-# Gains: kp_x NEGATIVE, kp_y POSITIVE — confirmed in commit b39fe702.
-# Face RIGHT (positive err_x) → arm moves right (negative workspace x for this mount).
-# Face DOWN  (positive err_y) → arm tilts down  (positive workspace y).
-# At max error (320 px), step = 0.32" — within max_joint_step clamp.
-ARM_IK_KP_X = -0.001
-ARM_IK_KP_Y = 0.001
+# Single gain (positive); pixel-to-workspace direction comes from
+# rotating the pixel error by the camera tip angle (q1+q2).
+ARM_IK_KP = 0.002             # px → inches gain (positive; rotation handles direction)
 ARM_IK_MAX_JOINT_STEP = 0.2618 # max joint angle change per update (rad); 15°
-ARM_IK_MAX_JOINT_VEL = 0.4  # hard per-joint speed cap (rad/s)
+ARM_IK_MAX_JOINT_VEL = 0.8  # hard per-joint speed cap (rad/s)
 ARM_CONTROL_RATE_HZ = 20.0   # arm controller timer frequency (Hz)
 ARM_IK_MAX_WORKSPACE_STEP = 1.5  # max workspace move per control tick (inches);
                                   # caps large jumps from false/stale detections
-ARM_IK_BOUNDARY_PULL_IN = 0.35  # inches pulled inward from max reach during tracking;
-                                 # avoids q2 freezing near full extension
+ARM_IK_BOUNDARY_PULL_IN = 0.05  # inches pulled inward from max reach during tracking;
+                                 # small value: just enough to avoid singularity
 ARM_IK_TIP_ANGLE_LIMIT_DEG = 85.0  # hard safety clamp for linkage-2 tip angle (q1+q2)
 ARM_TRACK_OUTLIER_REJECT_PX = 200.0  # reject detections > this many px from EMA
-ARM_TRACK_REACQUIRE_RAMP_SEC = 1.2  # seconds to ramp from soft-start to full step
-ARM_IK_ACQUIRE_STEP_SCALE = 0.1  # fraction of max_joint_step used right after reacquire
+ARM_TRACK_REACQUIRE_RAMP_SEC = 0.6  # seconds to ramp from soft-start to full step
+ARM_IK_ACQUIRE_STEP_SCALE = 0.2  # fraction of max_joint_step used right after reacquire
 
 # Arm tracking control defaults (legacy, kept for reference)
 ARM_TRACK_MAX_STEP_RAD = 0.08
