@@ -27,6 +27,7 @@ from face_lock.constants import (
     ARM_ELBOW_UP,
     ARM_IK_BOUNDARY_PULL_IN,
     ARM_IK_KP_X,
+    ARM_IK_MAX_JOINT_VEL,
     ARM_IK_KP_Y,
     ARM_IK_MAX_JOINT_STEP,
     ARM_IK_MAX_WORKSPACE_STEP,
@@ -131,6 +132,7 @@ class ArmController(LifecycleNode):
 
         # Detection EMA state
         self._last_detection_time: float = 0.0
+        self._last_control_time: float = 0.0
         self._acquired_time: float = 0.0
         self._had_recent_detection: bool = False
         self._x_filtered: Optional[float] = None
@@ -145,6 +147,7 @@ class ArmController(LifecycleNode):
         self.declare_parameter("kp_x", ARM_IK_KP_X)
         self.declare_parameter("kp_y", ARM_IK_KP_Y)
         self.declare_parameter("max_joint_step", ARM_IK_MAX_JOINT_STEP)
+        self.declare_parameter("max_joint_vel", ARM_IK_MAX_JOINT_VEL)
         self.declare_parameter("deadband_px", ARM_TRACK_DEADBAND_PX)
         self.declare_parameter("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
         self.declare_parameter("elbow_up", ARM_ELBOW_UP)
@@ -189,6 +192,7 @@ class ArmController(LifecycleNode):
         self._kp_x = self._pf("kp_x", ARM_IK_KP_X)
         self._kp_y = self._pf("kp_y", ARM_IK_KP_Y)
         self._max_joint_step = self._pf("max_joint_step", ARM_IK_MAX_JOINT_STEP)
+        self._max_joint_vel = self._pf("max_joint_vel", ARM_IK_MAX_JOINT_VEL)
         self._deadband_px = self._pf("deadband_px", ARM_TRACK_DEADBAND_PX)
         self._track_timeout = self._pf("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
         self._elbow_up = self._pb("elbow_up", ARM_ELBOW_UP)
@@ -209,6 +213,7 @@ class ArmController(LifecycleNode):
             0.0, min(1.0, self._pf("acquire_step_scale", ARM_IK_ACQUIRE_STEP_SCALE))
         )
         self._control_on_detection = self._pb("control_on_detection", True)
+        self._control_period = 1.0 / max(1.0, control_hz)
 
         # Initialise IK angles from home servo position
         self._q1, self._q2 = _servo_to_ik(LOWER_ARM_HOME_RAD, UPPER_ARM_HOME_RAD)
@@ -242,6 +247,7 @@ class ArmController(LifecycleNode):
         self.get_logger().info("Activating arm controller (IK mode)")
         self._active = True
         self._last_detection_time = time.monotonic()
+        self._last_control_time = 0.0
         self._acquired_time = 0.0
         self._had_recent_detection = False
         self._x_filtered = None
@@ -314,6 +320,8 @@ class ArmController(LifecycleNode):
             self._x_filtered = cx
             self._y_filtered = cy
         else:
+            if self._x_filtered is None or self._y_filtered is None:
+                return
             xf = float(self._x_filtered)
             yf = float(self._y_filtered)
             dist_px = math.hypot(cx - xf, cy - yf)
@@ -342,8 +350,19 @@ class ArmController(LifecycleNode):
         if not self._active:
             return
 
-        # Hold position when face is lost
         now = time.monotonic()
+        prev_control_time = self._last_control_time
+        # Prevent stacked detection+timer calls from creating back-to-back jumps.
+        if prev_control_time > 0.0 and (now - prev_control_time) < (0.5 * self._control_period):
+            return
+        control_dt = (
+            self._control_period
+            if prev_control_time <= 0.0
+            else max(1e-3, now - prev_control_time)
+        )
+        self._last_control_time = now
+
+        # Hold position when face is lost
         if now - self._last_detection_time > self._track_timeout:
             self._had_recent_detection = False
             return
@@ -459,6 +478,8 @@ class ArmController(LifecycleNode):
         # Proportional scaling gives the full ms budget to the largest
         # change and scales the other joint down accordingly.
         ms = self._max_joint_step
+        if self._max_joint_vel > 0.0:
+            ms = min(ms, self._max_joint_vel * control_dt)
         if self._had_recent_detection and self._reacquire_ramp_sec > 0.0:
             age = max(0.0, now - self._acquired_time)
             if age < self._reacquire_ramp_sec:

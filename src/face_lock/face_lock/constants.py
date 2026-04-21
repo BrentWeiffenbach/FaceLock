@@ -48,15 +48,16 @@ ARM_ELBOW_UP = True                        # IK solution preference
 ARM_IK_KP_X = -0.001
 ARM_IK_KP_Y = 0.001
 ARM_IK_MAX_JOINT_STEP = 0.2618 # max joint angle change per update (rad); 15°
+ARM_IK_MAX_JOINT_VEL = 0.4  # hard per-joint speed cap (rad/s)
 ARM_CONTROL_RATE_HZ = 20.0   # arm controller timer frequency (Hz)
 ARM_IK_MAX_WORKSPACE_STEP = 1.5  # max workspace move per control tick (inches);
                                   # caps large jumps from false/stale detections
 ARM_IK_BOUNDARY_PULL_IN = 0.35  # inches pulled inward from max reach during tracking;
                                  # avoids q2 freezing near full extension
-ARM_IK_TIP_ANGLE_LIMIT_DEG = 90.0  # hard safety clamp for linkage-2 tip angle (q1+q2)
+ARM_IK_TIP_ANGLE_LIMIT_DEG = 85.0  # hard safety clamp for linkage-2 tip angle (q1+q2)
 ARM_TRACK_OUTLIER_REJECT_PX = 200.0  # reject detections > this many px from EMA
-ARM_TRACK_REACQUIRE_RAMP_SEC = 0.8  # seconds to ramp from soft-start to full step
-ARM_IK_ACQUIRE_STEP_SCALE = 0.25  # fraction of max_joint_step used right after reacquire
+ARM_TRACK_REACQUIRE_RAMP_SEC = 1.2  # seconds to ramp from soft-start to full step
+ARM_IK_ACQUIRE_STEP_SCALE = 0.1  # fraction of max_joint_step used right after reacquire
 
 # Arm tracking control defaults (legacy, kept for reference)
 ARM_TRACK_MAX_STEP_RAD = 0.08
