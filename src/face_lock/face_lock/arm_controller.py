@@ -259,9 +259,8 @@ class ArmController(LifecycleNode):
         self._pending_debug = False
 
         try:
-            # face_recognition publishes rgb8; convert to bgr for cv2
-            frame = self._bridge.imgmsg_to_cv2(msg, "rgb8")
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            # debug_landmarks is now bgr8 (raw frame + detection box)
+            frame = self._bridge.imgmsg_to_cv2(msg, "bgr8")
         except Exception:
             return
 

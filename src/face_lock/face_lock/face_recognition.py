@@ -7,6 +7,7 @@ import time
 from typing import List, Optional
 
 import face_recognition as face_recog_lib  # type: ignore
+import cv2
 import mediapipe as mp
 import numpy as np
 import rclpy
@@ -230,27 +231,58 @@ class FaceRecognitionNode(LifecycleNode):
             )
             self._cur_raw_image = rgb
 
-            mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            res = self.landmarker.detect(mp_img)
+            # ── Fast face detection (HOG) for arm tracking ────────────────
+            # Downsample for speed; face_locations returns coords in downsampled space.
+            small = rgb[::ID_REC_SCALE, ::ID_REC_SCALE]
+            locs = face_recog_lib.face_locations(small)
+            if locs:
+                # locs: list of (top, right, bottom, left) in downsampled pixels
+                top, right, bottom, left = locs[0]
+                # Scale back to original image coordinates
+                top    *= ID_REC_SCALE
+                right  *= ID_REC_SCALE
+                bottom *= ID_REC_SCALE
+                left   *= ID_REC_SCALE
+                center_x = float((left + right) / 2)
+                center_y = float((top + bottom) / 2)
+                size_x   = float(right - left)
+                size_y   = float(bottom - top)
 
-            if not res.face_landmarks:
+                det = Detection2D()
+                det.header = msg.header
+                det.bbox = BoundingBox2D()
+                det.bbox.center.position.x = center_x
+                det.bbox.center.position.y = center_y
+                det.bbox.center.theta = 0.0
+                det.bbox.size_x = size_x
+                det.bbox.size_y = size_y
+                self.detection_pub.publish(det)
+
+                # Publish debug image: raw frame + detection box (no landmarks)
+                debug_frame = rgb[:, :, ::-1].copy()  # RGB→BGR for cv2
+                cv2.rectangle(debug_frame,
+                               (left, top), (right, bottom),
+                               (0, 255, 0), 2)
+                cv2.circle(debug_frame,
+                            (int(center_x), int(center_y)), 5,
+                            (0, 0, 255), -1)
+                debug_msg = Image()
+                debug_msg.header = msg.header
+                debug_msg.height, debug_msg.width = debug_frame.shape[:2]
+                debug_msg.encoding = "bgr8"
+                debug_msg.step = debug_frame.shape[1] * 3
+                debug_msg.data = debug_frame.tobytes()
+                self.debug_image_pub.publish(debug_msg)
+            else:
                 if log_now:
                     self.get_logger().info("Checking | no face detected")
                     self._last_log_time = now
-                return
 
-            self._publish_detection(msg, res)
+            # ── Slow landmark detection for blendshapes / password ────────
+            mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            res = self.landmarker.detect(mp_img)
 
-            annotated = self.draw_landmarks_on_image(rgb, res)
-            debug_msg = Image()
-            debug_msg.header = msg.header
-            debug_msg.height, debug_msg.width = annotated.shape[:2]
-            debug_msg.encoding = "rgb8"
-            debug_msg.step = annotated.shape[1] * 3
-            debug_msg.data = annotated.tobytes()
-            self.debug_image_pub.publish(debug_msg)
-
-            if not res.face_blendshapes:
+            if not res.face_landmarks or not res.face_blendshapes:
                 return
 
             cats = res.face_blendshapes[0]
@@ -277,9 +309,8 @@ class FaceRecognitionNode(LifecycleNode):
                         or not self._id_check_thread.is_alive()
                     ):
                         self._id_last_check = now_id
-                        frame_for_id = np.ascontiguousarray(
-                            rgb[::ID_REC_SCALE, ::ID_REC_SCALE]
-                        )
+                        # Reuse the already-downsampled small frame
+                        frame_for_id = np.ascontiguousarray(small)
                         self._id_check_thread = threading.Thread(
                             target=self._run_identity_check,
                             args=(frame_for_id,),
