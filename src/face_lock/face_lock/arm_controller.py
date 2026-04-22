@@ -40,6 +40,7 @@ from vision_msgs.msg import Detection2D
 
 from face_lock.constants import (
     ARM_DEADBAND_PX,
+    ARM_HOME_RETURN_TIMEOUT_S,
     ARM_KP,
     ARM_MAX_STEP_RAD,
     ARM_SERVO_LIMIT_MAX_RAD,
@@ -94,6 +95,10 @@ class ArmController(LifecycleNode):
         self._theta1_target: float = LOWER_ARM_HOME_RAD
         self._deadlock_rad: float = DEADLOCK_HOME_RAD
 
+        # Timestamp of last face detection (monotonic seconds).
+        # Used to return arm home when face is lost for too long.
+        self._last_detection_time: float = 0.0
+
         # Latest face position from detection (raw, no filtering)
         self._face_x: Optional[float] = None
         self._face_y: Optional[float] = None
@@ -118,6 +123,7 @@ class ArmController(LifecycleNode):
         self.declare_parameter("servo_limit_max_rad", ARM_SERVO_LIMIT_MAX_RAD)
         self.declare_parameter("max_step_rad", ARM_MAX_STEP_RAD)
         self.declare_parameter("slew_rate_rad_s", ARM_SERVO_SLEW_RATE_RAD_S)
+        self.declare_parameter("home_return_timeout_s", ARM_HOME_RETURN_TIMEOUT_S)
 
     # ── helpers ──────────────────────────────────────────────────────
 
@@ -142,6 +148,7 @@ class ArmController(LifecycleNode):
         self._limit_max = self._pf("servo_limit_max_rad", ARM_SERVO_LIMIT_MAX_RAD)
         self._max_step = self._pf("max_step_rad", ARM_MAX_STEP_RAD)
         self._slew_rate = self._pf("slew_rate_rad_s", ARM_SERVO_SLEW_RATE_RAD_S)
+        self._home_return_timeout = self._pf("home_return_timeout_s", ARM_HOME_RETURN_TIMEOUT_S)
         self._slew_dt = 1.0 / 20.0
 
         self._theta1 = LOWER_ARM_HOME_RAD
@@ -152,7 +159,8 @@ class ArmController(LifecycleNode):
             f"{math.degrees(self._limit_max):.0f}°]  "
             f"Kp={self._kp}  deadband={self._deadband_px}px  "
             f"max_step={math.degrees(self._max_step):.1f}°  "
-            f"slew={math.degrees(self._slew_rate):.0f}°/s"
+            f"slew={math.degrees(self._slew_rate):.0f}°/s  "
+            f"home_timeout={self._home_return_timeout:.1f}s"
         )
 
         self.joint_pub = self.create_lifecycle_publisher(
@@ -183,6 +191,7 @@ class ArmController(LifecycleNode):
         self._face_x = None
         self._face_y = None
         self._pending_debug = False
+        self._last_detection_time = time.monotonic()
         result = super().on_activate(state)
         self._theta1 = LOWER_ARM_HOME_RAD
         self._theta1_target = LOWER_ARM_HOME_RAD
@@ -229,6 +238,7 @@ class ArmController(LifecycleNode):
 
         self._face_x = float(msg.bbox.center.position.x)
         self._face_y = float(msg.bbox.center.position.y)
+        self._last_detection_time = time.monotonic()
 
         error_x = self._face_x - self._image_width / 2.0
 
@@ -313,10 +323,22 @@ class ArmController(LifecycleNode):
     def _slew_cb(self) -> None:
         """20 Hz timer: interpolate _theta1 toward _theta1_target at slew rate.
 
+        Also returns the arm to home when no detection has arrived for
+        home_return_timeout seconds — prevents getting stuck at a limit.
         Publishing is done here — the detection callback only sets the target.
         """
         if not self._active:
             return
+
+        # Return to home if face has been lost long enough
+        stale = time.monotonic() - self._last_detection_time > self._home_return_timeout
+        if stale and abs(self._theta1_target - LOWER_ARM_HOME_RAD) > 1e-3:
+            self.get_logger().info(
+                "[ARM] No detection — returning to home",
+                throttle_duration_sec=2.0,
+            )
+            self._theta1_target = LOWER_ARM_HOME_RAD
+
         diff = self._theta1_target - self._theta1
         if abs(diff) < 1e-4:
             return  # already at target — nothing to do
