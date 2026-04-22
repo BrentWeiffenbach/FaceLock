@@ -354,18 +354,29 @@ class FaceRecognitionNode(LifecycleNode):
 
     def _publish_detection(self, msg: Image, res: FaceLandmarkerResult) -> None:
         face_landmarks = res.face_landmarks[0]
-        xs = [max(0.0, min(1.0, float(lm.x))) for lm in face_landmarks]
-        ys = [max(0.0, min(1.0, float(lm.y))) for lm in face_landmarks]
-        if not xs or not ys:
+
+        # Use mouth centre: average of inner-lip + corner landmarks.
+        # MediaPipe 478-point mesh indices:
+        #   13  = upper inner lip centre
+        #   14  = lower inner lip centre
+        #   61  = left mouth corner
+        #   291 = right mouth corner
+        MOUTH_IDX = (13, 14, 61, 291)
+        mouth_pts = [face_landmarks[i] for i in MOUTH_IDX
+                     if i < len(face_landmarks)]
+        if not mouth_pts:
             return
 
-        # Use mean of all landmarks (more stable than bounding-box centre)
-        center_x = (sum(xs) / len(xs)) * float(msg.width)
-        center_y = (sum(ys) / len(ys)) * float(msg.height)
-        min_x, max_x = min(xs), max(xs)
-        min_y, max_y = min(ys), max(ys)
-        size_x = (max_x - min_x) * float(msg.width)
-        size_y = (max_y - min_y) * float(msg.height)
+        center_x = (sum(max(0.0, min(1.0, float(p.x))) for p in mouth_pts)
+                    / len(mouth_pts)) * float(msg.width)
+        center_y = (sum(max(0.0, min(1.0, float(p.y))) for p in mouth_pts)
+                    / len(mouth_pts)) * float(msg.height)
+
+        # Bounding box still uses all landmarks for size
+        xs = [max(0.0, min(1.0, float(lm.x))) for lm in face_landmarks]
+        ys = [max(0.0, min(1.0, float(lm.y))) for lm in face_landmarks]
+        size_x = (max(xs) - min(xs)) * float(msg.width)
+        size_y = (max(ys) - min(ys)) * float(msg.height)
 
         det = Detection2D()
         det.header = msg.header
