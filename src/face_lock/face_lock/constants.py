@@ -62,10 +62,10 @@ LINKAGE_2_LENGTH = 6.5   # elbow servo → camera lens
 # Visual-servoing P-controller
 # Control fires ONCE per detection (event-driven, no timer).
 # Kp=0.003: at 300px error → ~51° step, at 50px → 8.6° step.
-ARM_KP = 0.0033                                # proportional gain (rad / px)
-ARM_DEADBAND_PX = 15.0                        # pixels from image centre to ignore
-ARM_SERVO_LIMIT_MIN_RAD = math.radians(10)    # servo limit (10°)
-ARM_SERVO_LIMIT_MAX_RAD = math.radians(170)   # servo limit (170°)
+ARM_KP = 0.0035                                # proportional gain (rad / px)
+ARM_DEADBAND_PX = 18.0                        # pixels from image centre to ignore
+ARM_SERVO_LIMIT_MIN_RAD = math.radians(5)    # servo limit (5°)
+ARM_SERVO_LIMIT_MAX_RAD = math.radians(180)   # servo limit (180°)
 ARM_MAX_STEP_RAD = math.radians(120)           # hard cap: max θ1 change per detection
 
 # Deadlock servo positions
