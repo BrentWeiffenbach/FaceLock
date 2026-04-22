@@ -303,13 +303,14 @@ class ArmController(LifecycleNode):
         servo1 = self._theta1
         servo2 = theta2 + math.pi / 2  # = θ1
 
+        # Only publish arm joints — deadlock is managed exclusively by
+        # the lock_door / unlock_door services in pi_hardware.
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.name = [LOWER_ARM_JOINT_NAME, UPPER_ARM_JOINT_NAME, DEADLOCK_JOINT_NAME]
+        msg.name = [LOWER_ARM_JOINT_NAME, UPPER_ARM_JOINT_NAME]
         msg.position = [
             self._clamp_servo(servo1),
             self._clamp_servo(servo2),
-            self._clamp_servo(self._deadlock_rad),
         ]
         self.joint_pub.publish(msg)
 

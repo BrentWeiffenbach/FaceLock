@@ -34,7 +34,7 @@ class PiHardware(Node):
         self._magnet_locked: bool = False
         self._last_pir: Optional[bool] = None
         self._last_button: Optional[bool] = None
-        self._deadlock_pulse_us: int = c.DEADLOCK_HOME_PULSE_US
+        self._deadlock_pulse_us: int = c.DEADLOCK_LOCK_PULSE_US
         self._lower_arm_pulse_us: int = self._radians_to_pulse_us(c.LOWER_ARM_HOME_RAD)
         self._upper_arm_pulse_us: int = self._radians_to_pulse_us(c.UPPER_ARM_HOME_RAD)
 
@@ -90,7 +90,7 @@ class PiHardware(Node):
 
         self._set_arm_pulse(c.LOWER_ARM_JOINT_NAME, self._lower_arm_pulse_us)
         self._set_arm_pulse(c.UPPER_ARM_JOINT_NAME, self._upper_arm_pulse_us)
-        self._set_deadlock_pulse(c.DEADLOCK_HOME_PULSE_US)
+        self._set_deadlock_pulse(c.DEADLOCK_LOCK_PULSE_US)
 
         self.get_logger().info("Connected to pigpio daemon and configured GPIO")
 
