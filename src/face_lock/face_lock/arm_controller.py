@@ -5,16 +5,19 @@
   Joint 2 (elbow): Z inverted (180° Y-rot), X along link 2 to camera
   Camera:          fixed normal to link 2, faces along joint-1 Z
 
-Camera-leveling constraint keeps link 2 vertical (θ1 − θ2 = π/2),
-reducing the arm to 1-DOF control.  A P-controller drives θ1 based
-on horizontal pixel error to centre the face in the camera frame.
+Camera-leveling constraint:
+  θ2 = θ1 − π/2  →  link 2 always vertical, camera always level
 
-Controller (matches example.html with sign flip for physical servo):
-  error_x = face_pixel_x − image_centre_x
-  desired_θ1 = θ1 + Kp · error_x      (positive: face-right → increase θ1)
-  θ1 += (desired_θ1 − θ1) · α          (exponential smoothing, α = 0.15)
-  θ2 = θ1 − π/2                        (camera leveling)
-  servo1 = θ1,  servo2 = θ2 + π/2 = θ1
+Fully event-driven (NO timer):
+  One detection received → compute error → one P-step → publish command.
+  No detection → arm holds position.  No stale data, no independent rate.
+
+Controller (one step per detection):
+  error_x  = face_pixel_x − image_centre_x
+  Δθ1      = clamp(Kp · error_x, −MAX_STEP, +MAX_STEP)
+  θ1_new   = clamp(θ1 + Δθ1, LIMIT_MIN, LIMIT_MAX)
+  servo1   = θ1_new
+  servo2   = θ1_new   (leveling: θ2 + π/2 = θ1)
 """
 
 from typing import Any, Optional
@@ -34,14 +37,11 @@ from std_srvs.srv import Trigger
 from vision_msgs.msg import Detection2D
 
 from face_lock.constants import (
-    ARM_CONTROL_RATE_HZ,
     ARM_DEADBAND_PX,
     ARM_KP,
     ARM_MAX_STEP_RAD,
     ARM_SERVO_LIMIT_MAX_RAD,
     ARM_SERVO_LIMIT_MIN_RAD,
-    ARM_SMOOTHING_ALPHA,
-    ARM_TRACK_TIMEOUT_SEC,
     DEADLOCK_HOME_RAD,
     DEADLOCK_JOINT_NAME,
     LOWER_ARM_HOME_RAD,
@@ -59,16 +59,6 @@ def _theta2_for_leveling(theta1: float) -> float:
     return theta1 - math.pi / 2
 
 
-def _theta1_to_servo(theta1: float) -> float:
-    """Joint angle θ1 → servo1 radians (identity mapping)."""
-    return theta1
-
-
-def _theta2_to_servo(theta2: float) -> float:
-    """Joint angle θ2 → servo2 radians (offset by π/2)."""
-    return theta2 + math.pi / 2
-
-
 def _servo_to_theta1(servo1: float) -> float:
     """Servo1 radians → joint angle θ1 (identity mapping)."""
     return servo1
@@ -78,33 +68,39 @@ def _servo_to_theta1(servo1: float) -> float:
 
 
 class ArmController(LifecycleNode):
-    """P-controller visual-servoing arm controller with camera leveling."""
+    """Event-driven P-controller arm controller with camera leveling.
+
+    Control fires ONLY on receipt of a detection message — no independent
+    timer, no stale data, no drift between detection rate and control rate.
+    """
 
     joint_pub: Publisher
     joint_states_sub: Subscription
     detection_sub: Subscription
+    image_sub: Subscription
     reset_arm_srv: Any
-    control_timer: Any
 
     def __init__(self) -> None:
         super().__init__("arm_controller")
         self._active: bool = False
 
-        # Current base servo angle = θ1 (updated from servo feedback)
+        # Current θ1 (updated from servo feedback)
         self._theta1: float = LOWER_ARM_HOME_RAD
         self._deadlock_rad: float = DEADLOCK_HOME_RAD
 
-        # Detection state (raw — no EMA)
-        self._last_detection_time: float = 0.0
+        # Latest face position from detection (raw, no filtering)
         self._face_x: Optional[float] = None
         self._face_y: Optional[float] = None
-        self._last_debug_log_time: float = 0.0
+
+        # Pending debug annotation (set in detection_cb, drawn in image_cb)
+        self._pending_debug: bool = False
+        self._pending_error_x: float = 0.0
+        self._pending_theta1: float = LOWER_ARM_HOME_RAD
 
         # Debug image saving
         self._bridge = CvBridge()
-        self._latest_frame: Optional[np.ndarray] = None
-        self._command_count: int = 0
         self._debug_image_dir = "/tmp/arm_debug"
+        self._debug_count: int = 0
         os.makedirs(self._debug_image_dir, exist_ok=True)
 
         # Parameters
@@ -114,9 +110,6 @@ class ArmController(LifecycleNode):
         self.declare_parameter("deadband_px", ARM_DEADBAND_PX)
         self.declare_parameter("servo_limit_min_rad", ARM_SERVO_LIMIT_MIN_RAD)
         self.declare_parameter("servo_limit_max_rad", ARM_SERVO_LIMIT_MAX_RAD)
-        self.declare_parameter("control_rate_hz", ARM_CONTROL_RATE_HZ)
-        self.declare_parameter("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
-        self.declare_parameter("smoothing_alpha", ARM_SMOOTHING_ALPHA)
         self.declare_parameter("max_step_rad", ARM_MAX_STEP_RAD)
 
     # ── helpers ──────────────────────────────────────────────────────
@@ -132,7 +125,7 @@ class ArmController(LifecycleNode):
     # ── lifecycle ────────────────────────────────────────────────────
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
-        self.get_logger().info("Configuring arm controller")
+        self.get_logger().info("Configuring arm controller (event-driven)")
 
         self._image_width = self._pf("image_width", 640.0)
         self._image_height = self._pf("image_height", 480.0)
@@ -140,20 +133,17 @@ class ArmController(LifecycleNode):
         self._deadband_px = self._pf("deadband_px", ARM_DEADBAND_PX)
         self._limit_min = self._pf("servo_limit_min_rad", ARM_SERVO_LIMIT_MIN_RAD)
         self._limit_max = self._pf("servo_limit_max_rad", ARM_SERVO_LIMIT_MAX_RAD)
-        self._track_timeout = self._pf("track_timeout_sec", ARM_TRACK_TIMEOUT_SEC)
-        self._smoothing_alpha = self._pf("smoothing_alpha", ARM_SMOOTHING_ALPHA)
-        self._max_step_rad = self._pf("max_step_rad", ARM_MAX_STEP_RAD)
-        control_hz = self._pf("control_rate_hz", ARM_CONTROL_RATE_HZ)
+        self._max_step = self._pf("max_step_rad", ARM_MAX_STEP_RAD)
 
-        # Initialise θ1 from home position
         self._theta1 = LOWER_ARM_HOME_RAD
         self.get_logger().info(
             f"Home θ1={math.degrees(self._theta1):.1f}°  "
             f"limits=[{math.degrees(self._limit_min):.0f}°, "
-            f"{math.degrees(self._limit_max):.0f}°]"
+            f"{math.degrees(self._limit_max):.0f}°]  "
+            f"Kp={self._kp}  deadband={self._deadband_px}px  "
+            f"max_step={math.degrees(self._max_step):.1f}°"
         )
 
-        # Pub / sub / srv
         self.joint_pub = self.create_lifecycle_publisher(
             JointState, "/arm/joint_commands", 10
         )
@@ -163,6 +153,9 @@ class ArmController(LifecycleNode):
         self.detection_sub = self.create_subscription(
             Detection2D, "/face_recognition/detection", self._detection_cb, 10
         )
+        # debug_landmarks is published by face_recognition just AFTER detection.
+        # Saving the debug image here (rather than in detection_cb) guarantees
+        # the annotated frame is the one that matches the detection coordinates.
         self.image_sub = self.create_subscription(
             Image, "/face_recognition/debug_landmarks", self._image_cb, 1
         )
@@ -170,19 +163,14 @@ class ArmController(LifecycleNode):
             Trigger, "reset_arm", self._reset_arm_cb
         )
 
-        # Fixed-rate control loop
-        period = 1.0 / max(1.0, control_hz)
-        self.control_timer = self.create_timer(period, self._control_loop)
-
         return TransitionCallbackReturn.SUCCESS
 
     def on_activate(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info("Activating arm controller")
         self._active = True
-        self._last_detection_time = time.monotonic()
         self._face_x = None
         self._face_y = None
-        # Activate lifecycle publishers, then send home
+        self._pending_debug = False
         result = super().on_activate(state)
         self._theta1 = LOWER_ARM_HOME_RAD
         self._deadlock_rad = DEADLOCK_HOME_RAD
@@ -192,11 +180,11 @@ class ArmController(LifecycleNode):
     def on_deactivate(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info("Deactivating arm controller — returning to home")
         self._active = False
-        # Send home before super() deactivates the lifecycle publisher
+        self._face_x = None
+        self._face_y = None
+        self._pending_debug = False
         self._theta1 = LOWER_ARM_HOME_RAD
         self._deadlock_rad = DEADLOCK_HOME_RAD
-        self._x_filtered = None
-        self._y_filtered = None
         self._publish_joint_command()
         return super().on_deactivate(state)
 
@@ -205,13 +193,6 @@ class ArmController(LifecycleNode):
         return TransitionCallbackReturn.SUCCESS
 
     # ── callbacks ────────────────────────────────────────────────────
-
-    def _image_cb(self, msg: Image) -> None:
-        """Store latest camera frame for debug overlay."""
-        try:
-            self._latest_frame = self._bridge.imgmsg_to_cv2(msg, "bgr8")
-        except Exception:
-            pass
 
     def _joint_states_cb(self, msg: JointState) -> None:
         """Sync internal θ1 with actual servo feedback."""
@@ -224,119 +205,104 @@ class ArmController(LifecycleNode):
                 self._deadlock_rad = self._clamp_servo(msg.position[idx])
 
     def _detection_cb(self, msg: Detection2D) -> None:
-        """Use raw detection centre directly (no EMA) and save debug image."""
+        """Receive detection → apply one P-step → publish.
+
+        This is the ONLY place the arm moves.  No timer, no repeat.
+        The next move happens only when the next detection arrives.
+        """
         if not self._active:
             return
 
         self._face_x = float(msg.bbox.center.position.x)
         self._face_y = float(msg.bbox.center.position.y)
-        self._last_detection_time = time.monotonic()
 
-        # Save debug image on every detection (synced with face_recognition)
-        error_x = self._face_x - self._image_width / 2.0
-        self._save_debug_image(error_x)
-
-    def _control_loop(self) -> None:
-        """P-control: horizontal pixel error → θ1 adjustment."""
-        if not self._active:
-            return
-
-        # Hold position when face is lost
-        if time.monotonic() - self._last_detection_time > self._track_timeout:
-            return
-
-        if self._face_x is None:
-            return
-
-        # ── horizontal pixel error from image centre ─────────────────────
         error_x = self._face_x - self._image_width / 2.0
 
-        # ── debug logging (throttled to 1 Hz) ────────────────────────
-        now = time.monotonic()
-        if now - self._last_debug_log_time >= 1.0:
-            self._last_debug_log_time = now
-            direction = (
-                "RIGHT" if error_x > self._deadband_px
-                else "LEFT" if error_x < -self._deadband_px
-                else "CENTRE"
-            )
-            self.get_logger().info(
-                f"[ARM] {direction}  err_x={error_x:+.1f}px  "
-                f"θ1={math.degrees(self._theta1):.1f}°"
-            )
-
-        # ── deadband ─────────────────────────────────────────────────
-        if abs(error_x) <= self._deadband_px:
-            return
-
-        # ── P-controller ─────────────────────────────────────────────
-        # Physical servo direction: increasing servo1 → arm pans right.
-        # face-right (positive error_x) → increase θ1 → arm pans right.
-        delta_theta1 = self._kp * error_x
-
-        # ── compute desired and clamp to servo limits ────────────────
-        desired_theta1 = self._theta1 + delta_theta1
-        desired_theta1 = max(self._limit_min, min(self._limit_max, desired_theta1))
-
-        # ── exponential smoothing (prevents instant jumps) ───────────
-        step = (desired_theta1 - self._theta1) * self._smoothing_alpha
-
-        # ── hard cap on step size per tick ────────────────────────────
-        step = max(-self._max_step_rad, min(self._max_step_rad, step))
-
-        self._theta1 = max(
-            self._limit_min, min(self._limit_max, self._theta1 + step)
+        direction = (
+            "RIGHT" if error_x > self._deadband_px
+            else "LEFT" if error_x < -self._deadband_px
+            else "CENTRE"
         )
+        self.get_logger().info(
+            f"[ARM] {direction}  err_x={error_x:+.1f}px  θ1={math.degrees(self._theta1):.1f}°"
+        )
+
+        if abs(error_x) <= self._deadband_px:
+            # Face is centred — no movement needed; still flag debug image.
+            self._pending_debug = True
+            self._pending_error_x = error_x
+            self._pending_theta1 = self._theta1
+            return
+
+        # ── P-step (one step per detection, capped) ───────────────────
+        delta = self._kp * error_x
+        delta = max(-self._max_step, min(self._max_step, delta))
+        new_theta1 = self._theta1 + delta
+        new_theta1 = max(self._limit_min, min(self._limit_max, new_theta1))
+
+        self._theta1 = new_theta1
         self._publish_joint_command()
 
-    # ── debug image saving ────────────────────────────────────────
+        # Flag: save debug image when the matching annotated frame arrives
+        self._pending_debug = True
+        self._pending_error_x = error_x
+        self._pending_theta1 = self._theta1
 
-    def _save_debug_image(self, error_x: float) -> None:
-        """Save annotated frame on each detection (synced with face_recognition)."""
-        self._command_count += 1
-        if self._latest_frame is None:
+    def _image_cb(self, msg: Image) -> None:
+        """Receive annotated frame from face_recognition and save debug image.
+
+        face_recognition publishes detection then debug_landmarks in the same
+        callback, so this message corresponds to the most recent detection.
+        """
+        if not self._pending_debug:
             return
-        if self._face_x is None or self._face_y is None:
+        self._pending_debug = False
+
+        try:
+            # face_recognition publishes rgb8; convert to bgr for cv2
+            frame = self._bridge.imgmsg_to_cv2(msg, "rgb8")
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        except Exception:
             return
 
-        frame = self._latest_frame.copy()
+        self._debug_count += 1
         h, w = frame.shape[:2]
         cx_img = int(w / 2)
         cy_img = int(h / 2)
-        fx = int(self._face_x)
-        fy = int(self._face_y)
 
-        # Green crosshair at image centre
+        # Green crosshair at image centre (goal)
         cv2.drawMarker(frame, (cx_img, cy_img), (0, 255, 0),
-                        cv2.MARKER_CROSS, 30, 2)
-        cv2.putText(frame, "IMG_CENTER", (cx_img + 5, cy_img - 10),
+                       cv2.MARKER_CROSS, 40, 2)
+        cv2.putText(frame, "CENTRE", (cx_img + 5, cy_img - 12),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-        # Red dot at face detection (raw, no EMA)
-        cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
-        cv2.putText(frame, f"FACE ({fx},{fy})", (fx + 10, fy - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        if self._face_x is not None and self._face_y is not None:
+            fx = int(self._face_x)
+            fy = int(self._face_y)
+            # Red dot at face detection
+            cv2.circle(frame, (fx, fy), 10, (0, 0, 255), -1)
+            cv2.putText(frame, f"FACE ({fx},{fy})", (fx + 12, fy - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            # Orange error line
+            cv2.line(frame, (cx_img, cy_img), (fx, fy), (0, 140, 255), 2)
 
-        # Orange line from image centre to face (the actual error)
-        cv2.line(frame, (cx_img, cy_img), (fx, fy), (0, 165, 255), 2)
-
-        # Info text
-        info = (f"err_x={error_x:+.1f}px  "
-                f"theta1={math.degrees(self._theta1):.1f}deg  "
-                f"det#{self._command_count}")
-        cv2.putText(frame, info, (10, h - 15),
+        info = (f"err_x={self._pending_error_x:+.1f}px  "
+                f"theta1={math.degrees(self._pending_theta1):.1f}deg  "
+                f"#{self._debug_count}")
+        cv2.putText(frame, info, (10, h - 12),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
         path = os.path.join(self._debug_image_dir,
-                            f"arm_debug_{self._command_count:05d}.jpg")
+                            f"arm_debug_{self._debug_count:05d}.jpg")
         cv2.imwrite(path, frame)
 
     # ── publishing ───────────────────────────────────────────────────
 
     def _publish_joint_command(self) -> None:
         theta2 = _theta2_for_leveling(self._theta1)
-        servo1 = _theta1_to_servo(self._theta1)
-        servo2 = _theta2_to_servo(theta2)
+        # servo1 = θ1 (direct), servo2 = θ2 + π/2 = θ1 (leveling)
+        servo1 = self._theta1
+        servo2 = theta2 + math.pi / 2  # = θ1
 
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -358,9 +324,8 @@ class ArmController(LifecycleNode):
         self._deadlock_rad = DEADLOCK_HOME_RAD
         self._face_x = None
         self._face_y = None
+        self._pending_debug = False
         self._publish_joint_command()
-        # Freeze tracking so stale detections cannot move the arm.
-        # on_activate() re-enables when CHECKING restarts next cycle.
         self._active = False
         res.success = True
         res.message = "Arm reset to home (tracking frozen)"

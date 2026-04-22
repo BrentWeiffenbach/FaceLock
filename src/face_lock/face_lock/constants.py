@@ -60,14 +60,13 @@ LINKAGE_2_LENGTH = 6.5   # elbow servo → camera lens
 # ─────────────────────────────────────────────────────────────────────
 
 # Visual-servoing P-controller
-ARM_KP = 0.005                                # proportional gain (rad / px)
-ARM_DEADBAND_PX = 5.0                         # pixels from image centre to ignore
+# Control fires ONCE per detection (event-driven, no timer).
+# Kp=0.001: at 300px error → 17° step, at 50px → 3° step.
+ARM_KP = 0.001                                # proportional gain (rad / px)
+ARM_DEADBAND_PX = 10.0                        # pixels from image centre to ignore
 ARM_SERVO_LIMIT_MIN_RAD = math.radians(10)    # servo limit (10°)
 ARM_SERVO_LIMIT_MAX_RAD = math.radians(170)   # servo limit (170°)
-ARM_CONTROL_RATE_HZ = 20.0                    # control loop frequency (Hz)
-ARM_TRACK_TIMEOUT_SEC = 1.5                   # seconds before "face lost"
-ARM_SMOOTHING_ALPHA = 0.15                    # command smoothing (same as example.html)
-ARM_MAX_STEP_RAD = math.radians(5)            # hard cap: max θ1 change per tick
+ARM_MAX_STEP_RAD = math.radians(20)           # hard cap: max θ1 change per detection
 
 # Deadlock servo positions
 DEADLOCK_LOCK_PULSE_US = SERVO_PULSE_MIN_US
