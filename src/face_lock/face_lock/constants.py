@@ -31,8 +31,8 @@ UPPER_ARM_HOME_RAD = math.pi / 2
 DEADLOCK_HOME_RAD = math.pi / 2
 
 # Arm linkage lengths (inches)
-LINKAGE_1_LENGTH = 5.2   # base servo → elbow servo
-LINKAGE_2_LENGTH = 6.5   # elbow servo → camera lens
+LINKAGE_1_LENGTH = 5.2  # base servo → elbow servo
+LINKAGE_2_LENGTH = 6.5  # elbow servo → camera lens
 
 # ── 2-DOF planar arm DH convention ──────────────────────────────────
 #
@@ -62,17 +62,19 @@ LINKAGE_2_LENGTH = 6.5   # elbow servo → camera lens
 # Visual-servoing P-controller
 # Control fires ONCE per detection (event-driven, no timer).
 # Kp=0.003: at 300px error → ~51° step, at 50px → 8.6° step.
-ARM_KP = 0.0041                                # proportional gain (rad / px)
-ARM_DEADBAND_PX = 20.0                        # pixels from image centre to ignore
-ARM_SERVO_LIMIT_MIN_RAD = math.radians(5)    # servo limit (5°)
-ARM_SERVO_LIMIT_MAX_RAD = math.radians(180)   # servo limit (180°)
-ARM_MAX_STEP_RAD = math.radians(120)           # hard cap: max θ1 change per detection
-ARM_SERVO_SLEW_RATE_RAD_S = math.radians(40)   # max servo angular velocity (rad/s) — 45°/s
-ARM_HOME_RETURN_TIMEOUT_S = 3.0                # seconds without detection → return to home
+ARM_KP = 0.0041  # proportional gain (rad / px)
+ARM_DEADBAND_PX = 20.0  # pixels from image centre to ignore
+ARM_SERVO_LIMIT_MIN_RAD = math.radians(5)  # servo limit (5°)
+ARM_SERVO_LIMIT_MAX_RAD = math.radians(180)  # servo limit (180°)
+ARM_MAX_STEP_RAD = math.radians(120)  # hard cap: max θ1 change per detection
+ARM_SERVO_SLEW_RATE_RAD_S = math.radians(
+    40
+)  # max servo angular velocity (rad/s) — 45°/s
+ARM_HOME_RETURN_TIMEOUT_S = 3.0  # seconds without detection → return to home
 
 # Deadlock servo positions
-DEADLOCK_LOCK_PULSE_US = SERVO_PULSE_MIN_US
-DEADLOCK_UNLOCK_PULSE_US = SERVO_PULSE_MAX_US
+DEADLOCK_LOCK_PULSE_US = 1500
+DEADLOCK_UNLOCK_PULSE_US = 500
 DEADLOCK_HOME_PULSE_US = SERVO_PULSE_CENTER_US
 
 BLENDSHAPE_THRESHOLD = 0.45
