@@ -67,6 +67,12 @@ class FaceRecognitionNode(LifecycleNode):
         self.landmarker: Optional[FaceLandmarker] = None
         self._frame_count: int = 0
         self._id_check_thread: Optional[threading.Thread] = None
+        # Last captured items for debug service
+        self._last_landmarker_result: Optional[FaceLandmarkerResult] = None
+        self._last_detection_center: Optional[tuple[float, float, float, float]] = (
+            None
+        )
+        self._last_active_blendshapes: list[str] = []
 
         if not os.path.isfile(MODEL_PATH):
             self.get_logger().warn(f"Model missing: {MODEL_PATH}")
@@ -101,6 +107,11 @@ class FaceRecognitionNode(LifecycleNode):
             ("/face_recognition/delete_password", self._delete_password_cb),
         ]:
             self.create_service(Trigger, srv, cb)
+
+        # Debug figure service: create an annotated frame suitable for
+        # debugging / inclusion in a paper. Saves image to /tmp and returns
+        # the path in the response message.
+        self.create_service(Trigger, "/face_recognition/debug_figure", self._debug_figure_cb)
 
         for srv, cb in [
             ("/face_recognition/set_identity_name", self._set_identity_name_cb),
@@ -258,6 +269,9 @@ class FaceRecognitionNode(LifecycleNode):
                 det.bbox.size_y = size_y
                 self.detection_pub.publish(det)
 
+                # Store last detection used by the arm (centre & size)
+                self._last_detection_center = (center_x, center_y, size_x, size_y)
+
                 # Publish debug image: raw frame + detection box (no landmarks)
                 debug_frame = rgb[:, :, ::-1].copy()  # RGB→BGR for cv2
                 cv2.rectangle(debug_frame,
@@ -292,6 +306,10 @@ class FaceRecognitionNode(LifecycleNode):
                 if c.score > BLENDSHAPE_THRESHOLD
                 and c.category_name not in IGNORED_BLENDSHAPES
             )
+
+            # Store last active blendshapes and landmark result for debug
+            self._last_active_blendshapes = active
+            self._last_landmarker_result = res
 
             # Always publish blendshapes for any detected face (display + timer reset)
             blend_msg = FaceBlendshapes()
@@ -348,6 +366,85 @@ class FaceRecognitionNode(LifecycleNode):
 
         except Exception as e:
             self.get_logger().error(f"Image processing error: {e}")
+
+    def _debug_figure_cb(self, req: Trigger.Request, res: Trigger.Response) -> Trigger.Response:
+        """Service handler to create an annotated debug figure.
+
+        Produces an image annotated with:
+        - face location (dot + name)
+        - vector from image centre to face centre with error magnitude
+        - list of active blendshapes in bottom-right corner
+        """
+        del req
+
+        if self._cur_raw_image is None:
+            res.success, res.message = False, "No image available"
+            return res
+
+        # Use last detection centre if available, otherwise try HOG again
+        img = self._cur_raw_image.copy()
+        h, w = img.shape[:2]
+        cx = w // 2
+        cy = h // 2
+
+        # BGR for cv2
+        frame = img[:, :, ::-1].copy()
+
+        # Identity label
+        identity = self._id_matched_name if self._id_verified else "UNVERIFIED"
+
+        # Draw centre crosshair
+        cv2.drawMarker(frame, (cx, cy), (0, 255, 0), cv2.MARKER_CROSS, 40, 2)
+        cv2.putText(frame, "CAMERA CENTRE", (cx + 5, cy - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+        if self._last_detection_center and self._last_detection_center[0] is not None:
+            fx, fy, sx, sy = self._last_detection_center
+            fx_i, fy_i = int(fx), int(fy)
+            # Face marker and name
+            cv2.circle(frame, (fx_i, fy_i), 8, (0, 0, 255), -1)
+            cv2.putText(frame, f"{identity}", (fx_i + 10, fy_i - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+            # Error vector from centre to face
+            cv2.arrowedLine(frame, (cx, cy), (fx_i, fy_i), (0, 140, 255), 2, tipLength=0.05)
+            err_x = fx - (w / 2.0)
+            err_y = fy - (h / 2.0)
+            err_txt = f"err_x={err_x:+.1f}px err_y={err_y:+.1f}px"
+            cv2.putText(frame, err_txt, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+            # Draw bounding box from size
+            half_w = int(sx / 2)
+            half_h = int(sy / 2)
+            left = max(0, fx_i - half_w)
+            top = max(0, fy_i - half_h)
+            right = min(w - 1, fx_i + half_w)
+            bottom = min(h - 1, fy_i + half_h)
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+
+        # Blendshapes list in bottom-right corner
+        shapes = self._last_active_blendshapes or ["(none)"]
+        text_y = h - 20
+        for shape in reversed(shapes[-8:]):
+            cv2.putText(frame, shape, (w - 10 - 300, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+            text_y -= 18
+
+        # Optionally draw landmarks if available
+        try:
+            if self._last_landmarker_result:
+                annotated = self.draw_landmarks_on_image(img, self._last_landmarker_result)
+                # overlay landmarks (convert annotated RGB->BGR)
+                frame = cv2.addWeighted(frame, 0.65, annotated[:, :, ::-1], 0.35, 0)
+        except Exception:
+            pass
+
+        # Save image
+        out_dir = "/tmp/face_lock_debug"
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, f"debug_figure_{int(time.time())}.png")
+        cv2.imwrite(path, frame)
+
+        res.success = True
+        res.message = path
+        return res
 
     def _run_identity_check(self, small: np.ndarray) -> None:
         """Run face_recognition identity check in a background thread."""
