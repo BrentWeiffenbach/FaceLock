@@ -23,11 +23,11 @@ LOWER_ARM_JOINT_NAME = "lower_arm_joint"
 UPPER_ARM_JOINT_NAME = "upper_arm_joint"
 DEADLOCK_JOINT_NAME = "deadlock_joint"
 
-# Servo home angles (radians) — centre of [0, π] servo range.
-# Attach servo horns so that π/2 (1500 µs) is the centre of the
-# reachable workspace.  At home both links point straight up.
-LOWER_ARM_HOME_RAD = math.pi / 2
-UPPER_ARM_HOME_RAD = math.pi / 2
+# Servo home angles (radians).
+# Link 1 homes at 45° (arm angled left); 90° is the rightmost limit.
+# With camera-leveling, servo2 mirrors servo1, so upper arm homes at 45° too.
+LOWER_ARM_HOME_RAD = math.radians(45)
+UPPER_ARM_HOME_RAD = math.radians(45)
 DEADLOCK_HOME_RAD = math.pi / 2
 
 # Arm linkage lengths (inches)
@@ -62,10 +62,10 @@ LINKAGE_2_LENGTH = 11.25  # elbow servo → camera lens
 # Visual-servoing P-controller
 # Control fires ONCE per detection (event-driven, no timer).
 # Kp=0.003: at 300px error → ~51° step, at 50px → 8.6° step.
-ARM_KP = 0.0041  # proportional gain (rad / px)
+ARM_KP = 0.001  # proportional gain (rad / px)
 ARM_DEADBAND_PX = 20.0  # pixels from image centre to ignore
-ARM_SERVO_LIMIT_MIN_RAD = math.radians(5)  # servo limit (5°)
-ARM_SERVO_LIMIT_MAX_RAD = math.radians(180)  # servo limit (180°)
+ARM_SERVO_LIMIT_MIN_RAD = math.radians(45)  # servo limit — matches home (leftmost)
+ARM_SERVO_LIMIT_MAX_RAD = math.radians(90)  # servo limit — old home becomes rightmost
 ARM_MAX_STEP_RAD = math.radians(120)  # hard cap: max θ1 change per detection
 ARM_SERVO_SLEW_RATE_RAD_S = math.radians(
     40

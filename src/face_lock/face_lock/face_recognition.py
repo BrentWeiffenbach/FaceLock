@@ -522,7 +522,7 @@ class FaceRecognitionNode(LifecycleNode):
             if not pw:
                 continue
             expected = set(pw[self._pw_progress[i]])
-            if expected and expected.issubset(active):
+            if expected and expected == active:
                 self._pw_progress[i] += 1
                 self.get_logger().info(
                     f"Password step {self._pw_progress[i]}/{len(pw)} matched"
