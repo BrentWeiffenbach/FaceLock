@@ -31,8 +31,8 @@ UPPER_ARM_HOME_RAD = math.pi / 2
 DEADLOCK_HOME_RAD = math.pi / 2
 
 # Arm linkage lengths (inches)
-LINKAGE_1_LENGTH = 5.2  # base servo → elbow servo
-LINKAGE_2_LENGTH = 6.5  # elbow servo → camera lens
+LINKAGE_1_LENGTH = 10.75  # base servo → elbow servo
+LINKAGE_2_LENGTH = 11.25  # elbow servo → camera lens
 
 # ── 2-DOF planar arm DH convention ──────────────────────────────────
 #
