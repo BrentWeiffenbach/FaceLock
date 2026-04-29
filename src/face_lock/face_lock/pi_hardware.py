@@ -53,6 +53,7 @@ class PiHardware(Node):
         # Services
         self.lock_srv = self.create_service(Trigger, "lock_door", self.lock_cb)
         self.unlock_srv = self.create_service(Trigger, "unlock_door", self.unlock_cb)
+        self.attract_srv = self.create_service(Trigger, "attract_door", self.attract_cb)
 
         self._init_hardware()
         self.io_timer = self.create_timer(0.05, self._poll_inputs)
@@ -185,11 +186,22 @@ class PiHardware(Node):
     def lock_cb(self, req: Trigger.Request, res: Trigger.Response) -> Trigger.Response:
         del req
         self._magnet_locked = True
+        self._set_deadlock_pulse(c.DEADLOCK_LOCK_PULSE_US)
+        # Deadlock now holds the door — electromagnet can be released
+        if not self.use_mock and self.pi is not None:
+            self.pi.write(c.ELECTROMAGNET_GPIO, 0)
+        self._magnet_locked = False
+        res.success = True
+        res.message = "Door locked: deadlock engaged, magnet released"
+        return res
+
+    def attract_cb(self, req: Trigger.Request, res: Trigger.Response) -> Trigger.Response:
+        """Turn on the electromagnet to attract/pull the door closed."""
+        del req
         if not self.use_mock and self.pi is not None:
             self.pi.write(c.ELECTROMAGNET_GPIO, 1)
-        self._set_deadlock_pulse(c.DEADLOCK_LOCK_PULSE_US)
         res.success = True
-        res.message = "Door locked: magnet HIGH, deadlock engaged"
+        res.message = "Electromagnet ON — attracting door"
         return res
 
     def unlock_cb(

@@ -75,6 +75,7 @@ class FaceLockManager(Node):
         self.lock_door_srv = self.create_client(Trigger, "lock_door")
         self.unlock_door_srv = self.create_client(Trigger, "unlock_door")
         self.reset_arm_srv = self.create_client(Trigger, "reset_arm")
+        self.attract_door_srv = self.create_client(Trigger, "attract_door")
 
         # Lifecycle node management services
         self.camera_state = self.create_client(ChangeState, "/camera/change_state")
@@ -120,6 +121,7 @@ class FaceLockManager(Node):
             "password_gui": False,
         }
         self._state_transition_pending = False
+        self._magnet_timer: Optional[Timer] = None
 
         self._all_clients = [
             (self.camera_state, "camera"),
@@ -208,6 +210,7 @@ class FaceLockManager(Node):
     def _enter_disabled(self) -> None:
         self.get_logger().info("Entering DISABLED state, deactivating all nodes")
         self.deactivate_timer.cancel()
+        self._cancel_magnet_timer()
         for client, name in self._all_clients:
             self.deactivate_node(client, name)
 
@@ -271,6 +274,31 @@ class FaceLockManager(Node):
         ]
         for client, name in clients:
             self.deactivate_node(client, name)
+        # After 2 s (enough time for the door to fully open), energise the
+        # electromagnet so it pulls the door closed when the person leaves.
+        self._cancel_magnet_timer()
+        self._magnet_timer = self.create_timer(2.0, self._attract_door_cb)
+
+    def _cancel_magnet_timer(self) -> None:
+        if self._magnet_timer is not None:
+            self._magnet_timer.cancel()
+            self._magnet_timer = None
+
+    def _attract_door_cb(self) -> None:
+        """One-shot timer callback: energise the electromagnet to pull door closed."""
+        self._cancel_magnet_timer()  # one-shot — cancel immediately
+        if self.robot_state != RobotState.OPEN:
+            return
+        self.get_logger().info("Energising electromagnet to attract door closed")
+        if self.attract_door_srv.wait_for_service(timeout_sec=1.0):
+            future = self.attract_door_srv.call_async(Trigger.Request())
+            future.add_done_callback(
+                lambda f: self.get_logger().info(
+                    f"attract_door result: {f.result().message if f.result() else 'no response'}"
+                )
+            )
+        else:
+            self.get_logger().warn("attract_door service not available")
 
     def _enter_locking(self) -> None:
         self.get_logger().info("Entering LOCKING state, locking door")
