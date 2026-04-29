@@ -64,8 +64,8 @@ LINKAGE_2_LENGTH = 11.25  # elbow servo → camera lens
 # Kp=0.003: at 300px error → ~51° step, at 50px → 8.6° step.
 ARM_KP = 0.0015  # proportional gain (rad / px)
 ARM_DEADBAND_PX = 10.0  # pixels from image centre to ignore
-ARM_SERVO_LIMIT_MIN_RAD = math.radians(70)  # servo limit — matches home (leftmost)
-ARM_SERVO_LIMIT_MAX_RAD = math.radians(12)  # servo limit — old home becomes rightmost
+ARM_SERVO_LIMIT_MIN_RAD = math.radians(90)  # servo limit — matches home (leftmost)
+ARM_SERVO_LIMIT_MAX_RAD = math.radians(17)  # servo limit — old home becomes rightmost
 ARM_MAX_STEP_RAD = math.radians(120)  # hard cap: max θ1 change per detection
 ARM_SERVO_SLEW_RATE_RAD_S = math.radians(
     40
